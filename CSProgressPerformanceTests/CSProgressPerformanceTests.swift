@@ -140,11 +140,11 @@ private func TimePureCSProgresses() {
     let queue = OperationQueue()
     queue.maxConcurrentOperationCount = 1
     
-    let masterProgress = CSProgress.discreteProgress(totalUnitCount: numOfEach * 5, granularity: granularity, queue: queue)
-    let subProgressA = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
-    let subProgressB = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
-    let subProgressC = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
-    let subProgressD = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
+    let masterProgress = CSProgress.discreteProgress(totalUnitCount: numOfEach * 5, granularity: granularity)
+    let subProgressA = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
+    let subProgressB = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
+    let subProgressC = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
+    let subProgressD = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
     
     timeIt(label: "CSProgress") {
         for eachProgress in [masterProgress, subProgressA, subProgressB, subProgressC, subProgressD] {
@@ -162,13 +162,13 @@ private func TimePureCSProgressesWithObserver() {
     let queue = OperationQueue()
     queue.maxConcurrentOperationCount = 1
     
-    let masterProgress = CSProgress.discreteProgress(totalUnitCount: numOfEach * 5, granularity: granularity, queue: queue)
-    let subProgressA = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
-    let subProgressB = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
-    let subProgressC = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
-    let subProgressD = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
+    let masterProgress = CSProgress.discreteProgress(totalUnitCount: numOfEach * 5, granularity: granularity)
+    let subProgressA = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
+    let subProgressB = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
+    let subProgressC = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
+    let subProgressD = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
     
-    masterProgress.addFractionCompletedNotification { _, _, _ in
+    masterProgress.addFractionCompletedNotification(onQueue: queue) { _, _, _ in
         // handle it somehow
     }
     
@@ -192,12 +192,12 @@ private func TimeCSProgressesRootedWithObservingNSProgress() {
     
     let watcher = KVOWatcher(progress: masterNSProgress)
     
-    let masterProgress = CSProgress(wrappedNSProgress: masterNSProgress, parent: nil, pendingUnitCount: 0, granularity: granularity, queue: queue)
-    let subProgressA = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
-    let subProgressB = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
-    let subProgressC = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
-    let subProgressD = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
-    let subProgressE = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity, queue: queue)
+    let masterProgress = CSProgress.bridge(from: masterNSProgress, granularity: granularity, queue: queue)
+    let subProgressA = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
+    let subProgressB = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
+    let subProgressC = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
+    let subProgressD = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
+    let subProgressE = CSProgress(totalUnitCount: numOfEach, parent: masterProgress, pendingUnitCount: numOfEach, granularity: granularity)
     
     timeIt(label: "CSProgresses rooted with observing NSProgress") {
         for eachProgress in [subProgressA, subProgressB, subProgressC, subProgressD, subProgressE] {

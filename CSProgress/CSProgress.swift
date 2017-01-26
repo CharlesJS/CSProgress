@@ -2,29 +2,8 @@
 //  CSProgress.swift
 //  CSSwiftExtensions
 //
-//  Copyright © 2016-2017 Charles Srstka. All rights reserved.
-//
-//  Redistribution and use in source and binary forms, with or without
-//  modification, are permitted provided that the following conditions are met:
-//
-//  1. Redistributions of source code must retain the above copyright notice, this
-//     list of conditions and the following disclaimer.
-//  2. Redistributions in binary form must reproduce the above copyright notice,
-//     this list of conditions and the following disclaimer in the documentation
-//     and/or other materials provided with the distribution.
-//  3. Exception to the above: Apple Computer, Inc. is granted permission to do
-//     whatever they wish with this code.
-//
-//  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-//  ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-//  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-//  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
-//  ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-//  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-//  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-//  ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-//  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-//  SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//  Created by Charles Srstka on 1/10/16.
+//  Copyright © 2016 Charles Srstka. All rights reserved.
 //
 
 import Foundation
@@ -41,7 +20,20 @@ private protocol CSProgressBacking {
     var isIndeterminate: Bool { get }
     var isCancelled: Bool { get }
     
-    func set(totalUnitCount: CSProgress.UnitCount?, completedUnitCount: CSProgress.UnitCountChangeType?, localizedDescription: String?, localizedAdditionalDescription: String?, cancel: Bool, setupHandler: @escaping () -> (), completionHandler: @escaping () -> ())
+    // Setter for the properties affecting fractionCompleted. Pass nil to leave a property untouched.
+    // Returning the new fraction in the completion handler allows us to reduce dynamic dispatch by avoiding an extra
+    // call to the backing, which helps eke out a little extra performance.
+    func set(totalUnitCount: CSProgress.UnitCount?,
+             completedUnitCount: CSProgress.UnitCountChangeType?,
+             setupHandler: @escaping () -> (),
+             completionHandler: @escaping (_ fractionCompleted: Double) -> ())
+    
+    // General-purpose setter for the less frequently changed properties.
+    func set(localizedDescription: String?,
+             localizedAdditionalDescription: String?,
+             cancel: Bool,
+             setupHandler: @escaping () -> (),
+             completionHandler: @escaping () -> ())
     
     var children: [CSProgress] { get }
     func addChild(_ child: CSProgress, pendingUnitCount: CSProgress.UnitCount)
@@ -49,7 +41,7 @@ private protocol CSProgressBacking {
 }
 
 // 'final' is apparently needed to conform to _ObjectiveCBridgeable. It also results in better performance.
-public final class CSProgress {
+public final class CSProgress: CustomDebugStringConvertible {
     // We allow increments as an atomic operation, for better performance.
     fileprivate enum UnitCountChangeType {
         case set(CSProgress.UnitCount)
@@ -64,41 +56,51 @@ public final class CSProgress {
     
     // Notification types. These will all be executed on the progress's queue.
     
-    /// This closure will be executed on the progress's queue if the progress is cancelled.
+    /// This closure will be executed if the progress is cancelled.
     public typealias CancellationNotification = () -> ()
     
-    /// This closure will be executed on the progress's queue whenever the change in fractionCompleted exceeds the granularity.
+    /// This closure will be executed whenever the change in fractionCompleted exceeds the granularity.
     public typealias FractionCompletedNotification = (_ completedUnitCount: UnitCount, _ totalUnitCount: UnitCount, _ fractionCompleted: Double) -> ()
     
-    /// This closure will be executed on the progress's queue when the progress's description is changed.
+    /// This closure will be executed when the progress's description is changed.
     public typealias DescriptionNotification = (_ localizedDescription: String, _ localizedAdditionalDescription: String) -> ()
     
     /// Convenience struct for passing a CSProgress to a child function explicitly, encapsulating the parent progress and its pending unit count.
     /// Create one of these by calling .pass() on the parent progress.
     public struct ParentReference {
-        let progress: CSProgress
-        fileprivate let pendingUnitCount: CSProgress.UnitCount
+        public let progress: CSProgress
+        fileprivate let pendingUnitCount: UnitCount
         
-        // This creates a child progress, attached to the parent progress with the pending unit count specified when this struct was created.
-        func makeChild(totalUnitCount: CSProgress.UnitCount) -> CSProgress {
+        public init<Count: Integer>(progress: CSProgress, pendingUnitCount: Count) {
+            self.progress = progress
+            self.pendingUnitCount = UnitCount(pendingUnitCount.toIntMax())
+        }
+        
+        /// This creates a child progress, attached to the parent progress with the pending unit count specified when this struct was created.
+        public func makeChild<Count: Integer>(totalUnitCount: Count) -> CSProgress {
             return CSProgress(totalUnitCount: totalUnitCount, parent: self.progress, pendingUnitCount: self.pendingUnitCount)
         }
         
-        // For the case where the child operation is atomic, just mark the pending units as complete rather than creating a child progress.
-        // Can also be useful for error conditions where the operation should simply be skipped.
-        func markComplete() {
+        /// For the case where the child operation is atomic, just mark the pending units as complete rather than 
+        /// going to the trouble of creating a child progress.
+        /// Can also be useful for error conditions where the operation should simply be skipped.
+        public func markComplete() {
             self.progress.completedUnitCount += self.pendingUnitCount
         }
+        
+        /// Convenience methods to quickly cancel a progress, and check whether the progress is cancelled
+        public func cancel() { self.progress.cancel() }
+        public var isCancelled: Bool { return self.progress.isCancelled }
+        
+        /// Convenience methods to quickly make the parent progress the current progress object, in order to add something implicitly
+        public func becomeCurrent() { self.progress.becomeCurrent(withPendingUnitCount: self.pendingUnitCount) }
+        public func resignCurrent() { self.progress.resignCurrent() }
     }
     
     // The backing for a native Swift CSProgress.
     private final class NativeBacking: CSProgressBacking {
         private(set) var totalUnitCount: CSProgress.UnitCount
         private(set) var completedUnitCount: CSProgress.UnitCount = 0
-        
-        func incrementCompletedUnitCount(by interval: UnitCount) {
-            self.completedUnitCount += interval
-        }
         
         var fractionCompleted: Double {
             if self.completedUnitCount >= self.totalUnitCount {
@@ -127,7 +129,10 @@ public final class CSProgress {
             self.totalUnitCount = totalUnitCount
         }
         
-        func set(totalUnitCount: CSProgress.UnitCount?, completedUnitCount changeType: CSProgress.UnitCountChangeType?, localizedDescription: String?, localizedAdditionalDescription: String?, cancel: Bool, setupHandler: @escaping () -> (), completionHandler: @escaping () -> ()) {
+        func set(totalUnitCount: CSProgress.UnitCount?,
+                 completedUnitCount changeType: CSProgress.UnitCountChangeType?,
+                 setupHandler: @escaping () -> (),
+                 completionHandler: @escaping (_ fractionCompleted: Double) -> ()) {
             setupHandler()
             
             if let totalUnitCount = totalUnitCount {
@@ -142,6 +147,16 @@ public final class CSProgress {
                     self.completedUnitCount += delta
                 }
             }
+            
+            completionHandler(self.fractionCompleted)
+        }
+        
+        func set(localizedDescription: String?,
+                 localizedAdditionalDescription: String?,
+                 cancel: Bool,
+                 setupHandler: @escaping () -> (),
+                 completionHandler: @escaping () -> ()) {
+            setupHandler()
             
             if let localizedDescription = localizedDescription {
                 self.localizedDescription = localizedDescription
@@ -178,14 +193,9 @@ public final class CSProgress {
      - parameter granularity: Specifies the amount of change that should occur to the progress's fractionCompleted property before its notifications are fired.
      This eliminates notifications that are too small to be noticeable, increasing performance.
      Default value is 0.01.
-     
-     - parameter queue: Specifies an operation queue on which the progress object's notifications will be performed.
-     The queue's maxConcurrentOperationCount should be set to something low to prevent excessive threads from being created.
-     This parameter defaults to the main operation queue.
-     
      */
-    public class func discreteProgress<Count: Integer>(totalUnitCount: Count, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) -> CSProgress {
-        return self.init(totalUnitCount: totalUnitCount, parent: nil, pendingUnitCount: 0, granularity: granularity, queue: queue)
+    public class func discreteProgress<Count: Integer>(totalUnitCount: Count, granularity: Double = CSProgress.defaultGranularity) -> CSProgress {
+        return self.init(totalUnitCount: totalUnitCount, parent: nil, pendingUnitCount: 0, granularity: granularity)
     }
     
     /**
@@ -200,18 +210,12 @@ public final class CSProgress {
      - parameter granularity: Specifies the amount of change that should occur to the progress's fractionCompleted property before its notifications are fired.
      This eliminates notifications that are too small to be noticeable, increasing performance.
      Default value is 0.01.
-     
-     - parameter queue: Specifies an operation queue on which the progress object's notifications will be performed.
-     The queue's maxConcurrentOperationCount should be set to something low to prevent excessive threads from being created.
-     This parameter defaults to the main operation queue.
-     
      */
-    public init<Total: Integer, Pending: Integer>(totalUnitCount: Total, parent: CSProgress?, pendingUnitCount: Pending, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) {
+    public init<Total: Integer, Pending: Integer>(totalUnitCount: Total, parent: CSProgress?, pendingUnitCount: Pending, granularity: Double = CSProgress.defaultGranularity) {
         self.backing = NativeBacking(totalUnitCount: UnitCount(totalUnitCount.toIntMax()))
         self.parent = parent
         self._portionOfParent = UnitCount(totalUnitCount.toIntMax())
         self.granularity = granularity
-        self.queue = queue
         
         self.parent?.addChild(self, withPendingUnitCount: pendingUnitCount)
     }
@@ -234,15 +238,15 @@ public final class CSProgress {
             return self.backing.totalUnitCount
         }
         set {
-            // For the NSProgress-backed type, the setters will be called on our queue, to prevent KVO notifications from being fired on our own thread (and to improve performance).
+            // For the NSProgress-backed type, the setters will be called asynchronously, to prevent KVO notifications from being fired on our own thread (and to improve performance).
             // Therefore, pass closures to .set() to let it take and release the semaphore rather than doing it ourselves.
             
             let setupHandler = { self.accessSemaphore.wait() }
             
-            self.backing.set(totalUnitCount: newValue, completedUnitCount: nil, localizedDescription: nil, localizedAdditionalDescription: nil, cancel: false, setupHandler: setupHandler) {
+            self.backing.set(totalUnitCount: newValue, completedUnitCount: nil, setupHandler: setupHandler) { fractionCompleted in
                 defer { self.accessSemaphore.signal() }
                 
-                self.sendFractionCompletedNotifications()
+                self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted)
             }
         }
     }
@@ -256,25 +260,35 @@ public final class CSProgress {
             return self.backing.completedUnitCount
         }
         set {
-            // For the NSProgress-backed type, the setters will be called on our queue, to prevent KVO notifications from being fired on our own thread (and to improve performance).
-            // Therefore, pass closures to .set() to let it take and release the semaphore rather than doing it ourselves.
-            
-            let setupHandler = { self.accessSemaphore.wait() }
-            
-            self.backing.set(totalUnitCount: nil, completedUnitCount: .set(newValue), localizedDescription: nil, localizedAdditionalDescription: nil, cancel: false, setupHandler: setupHandler) {
-                self.sendFractionCompletedNotifications()
-                self.accessSemaphore.signal()
-            }
+            self.updateUnitCount(.set(newValue))
         }
     }
 
     /// Perform increment as one atomic operation, eliminating an unnecessary semaphore wait and increasing performance.
     public func incrementCompletedUnitCount<Count: Integer>(by interval: Count) {
+        self.updateUnitCount(.increment(UnitCount(interval.toIntMax())))
+    }
+    
+    private func updateUnitCount(_ change: UnitCountChangeType) {
+        // For the NSProgress-backed type, the setters will be called asynchronously, to prevent KVO notifications from being fired on our own thread (and to improve performance).
+        // Therefore, pass closures to .set() to let it take and release the semaphore rather than doing it ourselves.
+        
         let setupHandler = { self.accessSemaphore.wait() }
         
-        self.backing.set(totalUnitCount: nil, completedUnitCount: .increment(UnitCount(interval.toIntMax())), localizedDescription: nil, localizedAdditionalDescription: nil, cancel: false, setupHandler: setupHandler) {
-            self.sendFractionCompletedNotifications()
-            self.accessSemaphore.signal()
+        self.backing.set(totalUnitCount: nil, completedUnitCount: change, setupHandler: setupHandler) { fractionCompleted in
+            // If our progress is finished, clean up a bit. Remove ourselves from the tree, and update the parent's change count.
+            if fractionCompleted >= 1.0, let parent = self.parent {
+                parent.backing.removeChild(self)
+                self.parent = nil
+                
+                parent.backing.set(totalUnitCount: nil, completedUnitCount: .increment(self._portionOfParent), setupHandler: {}) { _ in
+                    self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted)
+                    self.accessSemaphore.signal()
+                }
+            } else {
+                self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted)
+                self.accessSemaphore.signal()
+            }
         }
     }
 
@@ -325,7 +339,7 @@ public final class CSProgress {
     public func cancel() {
         let setupHandler = { self.accessSemaphore.wait() }
         
-        self.backing.set(totalUnitCount: nil, completedUnitCount: nil, localizedDescription: nil, localizedAdditionalDescription: nil, cancel: true, setupHandler: setupHandler) {
+        self.backing.set(localizedDescription: nil, localizedAdditionalDescription: nil, cancel: true, setupHandler: setupHandler) {
             self.sendCancellationNotifications()
             self.accessSemaphore.signal()
         }
@@ -342,7 +356,7 @@ public final class CSProgress {
         set {
             let setupHandler = { self.accessSemaphore.wait() }
             
-            self.backing.set(totalUnitCount: nil, completedUnitCount: nil, localizedDescription: newValue, localizedAdditionalDescription: nil, cancel: false, setupHandler: setupHandler) {
+            self.backing.set(localizedDescription: newValue, localizedAdditionalDescription: nil, cancel: false, setupHandler: setupHandler) {
                 self.sendDescriptionNotifications()
                 self.accessSemaphore.signal()
             }
@@ -360,7 +374,7 @@ public final class CSProgress {
         set {
             let setupHandler = { self.accessSemaphore.wait() }
             
-            self.backing.set(totalUnitCount: nil, completedUnitCount: nil, localizedDescription: nil, localizedAdditionalDescription: newValue, cancel: false, setupHandler: setupHandler) {
+            self.backing.set(localizedDescription: nil, localizedAdditionalDescription: newValue, cancel: false, setupHandler: setupHandler) {
                 self.sendDescriptionNotifications()
                 self.accessSemaphore.signal()
             }
@@ -373,9 +387,6 @@ public final class CSProgress {
      Default value is 0.01.
      */
     public let granularity: Double
-    
-    /// The operation queue on which notifications will be fired when the progress object's properties change.
-    private let queue: OperationQueue
     
     /**
      Create a reference to a parent progress, encapsulating both it and its pending unit count.
@@ -412,17 +423,32 @@ public final class CSProgress {
         child.accessSemaphore = DispatchSemaphore(value: 1)
     }
     
-    private var cancellationNotifications: [UUID : CancellationNotification] = [:]
-    private var fractionCompletedNotifications: [UUID : FractionCompletedNotification] = [:]
-    private var descriptionNotifications: [UUID : DescriptionNotification] = [:]
+    private struct CancellationNotificationWrapper {
+        let notification: CancellationNotification
+        let queue: OperationQueue
+    }
+    
+    private struct FractionCompletedNotificationWrapper {
+        let notification: FractionCompletedNotification
+        let queue: OperationQueue
+    }
+    
+    private struct DescriptionNotificationWrapper {
+        let notification: DescriptionNotification
+        let queue: OperationQueue
+    }
+    
+    private var cancellationNotifications: [UUID : CancellationNotificationWrapper] = [:]
+    private var fractionCompletedNotifications: [UUID : FractionCompletedNotificationWrapper] = [:]
+    private var descriptionNotifications: [UUID : DescriptionNotificationWrapper] = [:]
     private var lastNotifiedFractionCompleted: Double = 0.0
     
     // The add...Notification() methods return an identifier which can be later sent to remove...Notification() to remove the notification.
     
-    private func _addCancellationNotification(_ notification: @escaping CancellationNotification) -> Any {
+    private func _addCancellationNotification(onQueue queue: OperationQueue, notification: @escaping CancellationNotification) -> Any {
         let uuid = UUID()
         
-        self.cancellationNotifications[uuid] = notification
+        self.cancellationNotifications[uuid] = CancellationNotificationWrapper(notification: notification, queue: queue)
         
         return uuid
     }
@@ -430,15 +456,20 @@ public final class CSProgress {
     /**
      Add a notification which will be called if the progress object is cancelled.
      
-     - parameter notification: A notification that will be called if the progress object is cancelled. This notification will be called on the progress object's queue.
+     - parameter queue: Specifies an operation queue on which the notification will be fired.
+     The queue should either be a serial queue, or should have its maxConcurrentOperationCount set to something low
+     to prevent excessive threads from being created.
+     This parameter defaults to the main operation queue.
+     
+     - parameter notification: A notification that will be called if the progress object is cancelled.
      
      - returns: An opaque value that can be passed to removeCancellationNotification() to de-register the notification.
      */
-    public func addCancellationNotification(_ notification: @escaping CancellationNotification) -> Any {
+    public func addCancellationNotification(onQueue queue: OperationQueue = .main, notification: @escaping CancellationNotification) -> Any {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
-        return self._addCancellationNotification(notification)
+        return self._addCancellationNotification(onQueue: queue, notification: notification)
     }
     
     private func _removeCancellationNotification(identifier: Any) {
@@ -459,10 +490,10 @@ public final class CSProgress {
         self._removeCancellationNotification(identifier: identifier)
     }
     
-    private func _addFractionCompletedNotification(_ notification: @escaping FractionCompletedNotification) -> Any {
+    private func _addFractionCompletedNotification(onQueue queue: OperationQueue, notification: @escaping FractionCompletedNotification) -> Any {
         let uuid = UUID()
         
-        self.fractionCompletedNotifications[uuid] = notification
+        self.fractionCompletedNotifications[uuid] = FractionCompletedNotificationWrapper(notification: notification, queue: queue)
         
         return uuid
     }
@@ -470,16 +501,21 @@ public final class CSProgress {
     /**
      Add a notification which will be called when the progress object's fractionCompleted property changes by an amount greater than the progress object's granularity.
      
+     - parameter queue: Specifies an operation queue on which the notification will be fired.
+     The queue should either be a serial queue, or should have its maxConcurrentOperationCount set to something low
+     to prevent excessive threads from being created.
+     This parameter defaults to the main operation queue.
+     
      - parameter notification: A notification that will be called when the fractionCompleted property is significantly changed.
      This notification will be called on the progress object's queue.
      
      - returns: An opaque value that can be passed to removeFractionCompletedNotification() to de-register the notification.
      */
-    @discardableResult public func addFractionCompletedNotification(_ notification: @escaping FractionCompletedNotification) -> Any {
+    @discardableResult public func addFractionCompletedNotification(onQueue queue: OperationQueue = .main, notification: @escaping FractionCompletedNotification) -> Any {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
-        return _addFractionCompletedNotification(notification)
+        return _addFractionCompletedNotification(onQueue: queue, notification: notification)
     }
     
     private func _removeFractionCompletedNotification(identifier: Any) {
@@ -500,10 +536,10 @@ public final class CSProgress {
         self._removeFractionCompletedNotification(identifier: identifier)
     }
     
-    private func _addDescriptionNotification(_ notification: @escaping DescriptionNotification) -> Any {
+    private func _addDescriptionNotification(onQueue queue: OperationQueue, notification: @escaping DescriptionNotification) -> Any {
         let uuid = UUID()
         
-        self.descriptionNotifications[uuid] = notification
+        self.descriptionNotifications[uuid] = DescriptionNotificationWrapper(notification: notification, queue: queue)
         
         return uuid
     }
@@ -511,16 +547,21 @@ public final class CSProgress {
     /**
      Add a notification which will be called when the progress object's localizedDescription or localizedAdditionalDescription property changes.
      
+     - parameter queue: Specifies an operation queue on which the notification will be fired.
+     The queue should either be a serial queue, or should have its maxConcurrentOperationCount set to something low
+     to prevent excessive threads from being created.
+     This parameter defaults to the main operation queue.
+     
      - parameter notification: A notification that will be called when the fractionComplocalizedDescription or localizedAdditionalDescriptionleted property is changed.
      This notification will be called on the progress object's queue.
      
      - returns: An opaque value that can be passed to removeDescriptionNotification() to de-register the notification.
      */
-    @discardableResult public func addDescriptionNotification(_ notification: @escaping DescriptionNotification) -> Any {
+    @discardableResult public func addDescriptionNotification(onQueue queue: OperationQueue = .main, notification: @escaping DescriptionNotification) -> Any {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
-        return _addDescriptionNotification(notification)
+        return _addDescriptionNotification(onQueue: queue, notification: notification)
     }
     
     private func _removeDescriptionNotification(identifier: Any) {
@@ -547,9 +588,9 @@ public final class CSProgress {
         let notifications = self.cancellationNotifications.values
         let children = self.backing.children
         
-        self.queue.addOperation {
-            for eachNotification in notifications {
-                eachNotification()
+        for eachNotification in notifications {
+            eachNotification.queue.addOperation {
+                eachNotification.notification()
             }
         }
         
@@ -560,24 +601,22 @@ public final class CSProgress {
     
     // Fire our fractionCompleted notifications.
     // This method should be protected by our semaphore before calling it.
-    private func sendFractionCompletedNotifications() {
-        let fractionCompleted = self.backing.fractionCompleted
+    private func sendFractionCompletedNotifications(fractionCompleted: Double) {
         let lastNotifiedFractionCompleted = self.lastNotifiedFractionCompleted
-        let completedUnitCount = self.backing.completedUnitCount
-        let totalUnitCount = self.backing.totalUnitCount
         let notifications = self.fractionCompletedNotifications.values
         let parent = self.parent
         
-        if completedUnitCount >= totalUnitCount || fabs(fractionCompleted - lastNotifiedFractionCompleted) >= self.granularity {
-            if !notifications.isEmpty {
-                self.queue.addOperation {
-                    for eachNotification in notifications {
-                        eachNotification(completedUnitCount, totalUnitCount, fractionCompleted)
-                    }
+        if fractionCompleted >= 1.0 || abs(fractionCompleted - lastNotifiedFractionCompleted) >= self.granularity {
+            let completedUnitCount = self.backing.completedUnitCount
+            let totalUnitCount = self.backing.totalUnitCount
+            
+            for eachNotification in notifications {
+                eachNotification.queue.addOperation {
+                    eachNotification.notification(completedUnitCount, totalUnitCount, fractionCompleted)
                 }
             }
             
-            parent?.sendFractionCompletedNotifications()
+            parent.map { $0.sendFractionCompletedNotifications(fractionCompleted: $0.backing.fractionCompleted) }
             self.lastNotifiedFractionCompleted = fractionCompleted
         }
     }
@@ -589,13 +628,144 @@ public final class CSProgress {
         let additionalDescription = self.backing.localizedAdditionalDescription
         let notifications = self.descriptionNotifications.values
         
-        self.queue.addOperation {
-            for eachNotification in notifications {
-                eachNotification(description, additionalDescription)
+        for eachNotification in notifications {
+            eachNotification.queue.addOperation {
+                eachNotification.notification(description, additionalDescription)
             }
         }
     }
-
+    
+    public var debugDescription: String {
+        self.accessSemaphore.wait()
+        defer { self.accessSemaphore.signal() }
+        
+        return self._debugDescription
+    }
+    
+    private var _debugDescription: String {
+        var desc = "<\(String(describing: type(of: self))) 0x\(String(ObjectIdentifier(self).hashValue, radix: 16)))>"
+        
+        desc += " : Parent: " + (self.parent.map { "0x\(String(ObjectIdentifier($0).hashValue, radix: 16))" } ?? "nil")
+        desc += " / Fraction completed: \(self.backing.fractionCompleted) / Completed: \(self.backing.completedUnitCount) of \(self.backing.totalUnitCount)"
+        
+        if self.backing is NativeBacking {
+            desc += " (native)"
+        } else if let nsBacking = self.backing as? NSProgressBacking {
+            desc += " (wrapping: 0x\(String(ObjectIdentifier(nsBacking.progress).hashValue, radix: 16)))"
+        }
+        
+        for eachChild in self.backing.children {
+            for eachLine in eachChild._debugDescription.components(separatedBy: "\n") {
+                desc += "\n\t\(eachLine)"
+            }
+        }
+        
+        return desc
+    }
+    
+    // MARK: Implicit Composition Crud
+    // Note: The methods below exist to support implicit progress tree composition, which is necessary to make this class a drop-in replacement for NSProgress.
+    // Note: This code contains some Objective-C compatibility crud as well which can be deleted if Objective-C compatibility is not important.
+    
+    // The key used to retrieve the current progress from Foundation's thread-specific dictionary.
+    private static let currentProgressKey = "com.charlessoft.CSProgress.current"
+    
+    /// Returns the CSProgress instance, if any, associated with the current thread by a previous invocation of becomeCurrent(withPendingUnitCount:).
+    public static func current() -> CSProgress? {
+        return self._current?.progress
+    }
+    
+    // Underlying storage for the current progress and its pending unit count.
+    private static var _current: ParentReference? {
+        get {
+            return Thread.current.threadDictionary.object(forKey: self.currentProgressKey) as? ParentReference
+        }
+        set {
+            if let parentRef = newValue {
+                Thread.current.threadDictionary.setObject(parentRef, forKey: self.currentProgressKey as NSString)
+            } else {
+                Thread.current.threadDictionary.removeObject(forKey: self.currentProgressKey)
+            }
+        }
+    }
+    
+    /**
+     Creates a new CSProgress object and attaches it to the CSProgress instance, if any, associated with the current thread
+     by a previous invocation of becomeCurrent(withPendingUnitCount:).
+     Will attach to NSProgress's current progress, if one is set and a current CSProgress is not.
+     This method is intended for backwards compatibility; it is recommended to explicitly build progress trees where possible.
+     Corresponds to NSProgress's -initWithTotalUnitCount:.
+     
+     - parameter totalUnitCount: The total number of units of work to be carried out.
+     
+     - parameter granularity: Specifies the amount of change that should occur to the progress's fractionCompleted property before its notifications are fired.
+     This eliminates notifications that are too small to be noticeable, increasing performance.
+     However, an operation to update the underlying NSProgress object will still be enqueued on every update.
+     Default value is 0.01.
+     
+     - parameter queue: Specifies an operation queue on which the underlying NSProgress object, if there is one, will be updated.
+     The queue's maxConcurrentOperationCount should be set to something low to prevent excessive threads from being created.
+     This parameter defaults to the main operation queue.
+     */
+    public convenience init<Count: Integer>(totalUnitCount: Count, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) {
+        if let parentRef = CSProgress._current {
+            let parent = parentRef.progress
+            let pendingUnitCount = parentRef.pendingUnitCount
+            
+            self.init(totalUnitCount: totalUnitCount, parent: parent, pendingUnitCount: pendingUnitCount, granularity: granularity)
+            
+            // Prevent double-attaching
+            parent.resignCurrent()
+        } else if Foundation.Progress.current() != nil {
+            // We have no way of knowing the current progress's pending unit count, so put a shim in between it and us
+            let shim = Foundation.Progress(totalUnitCount: 1)
+            
+            let parent = CSProgress.bridge(from: shim, queue: queue)
+            
+            self.init(totalUnitCount: totalUnitCount, parent: parent, pendingUnitCount: 1, granularity: granularity)
+        } else {
+            self.init(totalUnitCount: totalUnitCount, parent: nil, pendingUnitCount: 0, granularity: granularity)
+        }
+    }
+    
+    /**
+     Sets the receiver as the current progress object of the current thread and specifies the portion of work to be performed by the next child progress object of the receiver.
+     Also sets its bridged NSProgress as the current NSProgress, with the same pending unit count.
+     Do not attach both an NSProgress and a CSProgress implicitly after calling this method; the result is undefined behavior.
+     This method is intended for backwards compatibility; it is recommended to explicitly build progress trees where possible.
+     Corresponds to NSProgress's -becomeCurrentWithPendingUnitCount:.
+     
+     - parameter unitCount: The number of units of work to be carried out by the next progress object that is initialized by invoking the init(parent:userInfo:) method in the current thread with the receiver set as the parent. This number represents the portion of work to be performed in relation to the total number of units of work to be performed by the receiver (represented by the value of the receiver’s totalUnitCount property). The units of work represented by this parameter must be the same units of work that are used in the receiver’s totalUnitCount property.
+     
+     - parameter queue: Specifies an operation queue on which to update any NSProgress objects that may be implicitly added as children.
+     The queue's maxConcurrentOperationCount should be set to something low to prevent excessive threads from being created.
+     This parameter defaults to the main operation queue.
+     */
+    public func becomeCurrent<Count: Integer>(withPendingUnitCount unitCount: Count, queue: OperationQueue = .main) {
+        CSProgress._current = ParentReference(progress: self, pendingUnitCount: UnitCount(unitCount.toIntMax()))
+        
+        self.bridgeToNSProgress(queue: queue).becomeCurrent(withPendingUnitCount: Int64(unitCount.toIntMax()))
+    }
+    
+    /**
+     Balance the most recent previous invocation of becomeCurrent(withPendingUnitCount:) on the same thread by restoring the current progress object to what it was before becomeCurrent(withPendingUnitCount:) was invoked.
+     Also invokes resignCurrent() on its bridged NSProgress object.
+     Corresponds to NSProgress's -resignCurrent.
+     */
+    public func resignCurrent() {
+        if CSProgress.current() === self {
+            CSProgress._current = nil
+        }
+        
+        if let currentNS = Foundation.Progress.current() {
+            let bridged = self.bridgeToNSProgress()
+                
+            if bridged === currentNS {
+                bridged.resignCurrent()
+            }
+        }
+    }
+    
     // MARK: Objective-C Compatibility Crud
     // Note: Everything below this point exists for Objective-C interoperability. If Objective-C compatibility is not important, feel free to delete everything below.
     // Warning: The code gets notably uglier beyond this point. All hope abandon, ye who enter here!
@@ -617,6 +787,8 @@ public final class CSProgress {
             // This is to suppress KVO notifications caused by ourselves and prevent infinite loops.
             // We use a thread-local variable to avoid race conditions that could inadvertently cause
             // the suppression of KVO notifications sent from other threads.
+            // Use pthread specific values rather than NSThread's threadDictionary here, for performance
+            // reasons.
             
             pthread_key_create(&self.isUpdatingKey) {
                 let ptr = $0.bindMemory(to: Bool.self, capacity: 1)
@@ -659,7 +831,10 @@ public final class CSProgress {
         var isIndeterminate: Bool { return self.progress.isIndeterminate }
         var isCancelled: Bool { return self.progress.isCancelled }
         
-        func set(totalUnitCount: CSProgress.UnitCount?, completedUnitCount changeType: UnitCountChangeType?, localizedDescription: String?, localizedAdditionalDescription: String?, cancel: Bool, setupHandler: @escaping () -> (), completionHandler: @escaping () -> ()) {
+        func set(totalUnitCount: CSProgress.UnitCount?,
+                 completedUnitCount changeType: CSProgress.UnitCountChangeType?,
+                 setupHandler: @escaping () -> (),
+                 completionHandler: @escaping (_ fractionCompleted: Double) -> ()) {
             // Make our changes on the queue, to avoid jamming up the worker thread with KVO notifications.
             queue.addOperation {
                 setupHandler()
@@ -681,6 +856,22 @@ public final class CSProgress {
                     }
                 }
                 
+                self.isUpdating = false
+                
+                completionHandler(self.fractionCompleted)
+            }
+        }
+        
+        func set(localizedDescription: String?,
+                 localizedAdditionalDescription: String?,
+                 cancel: Bool,
+                 setupHandler: @escaping () -> (),
+                 completionHandler: @escaping () -> ()) {
+            queue.addOperation {
+                setupHandler()
+                
+                self.isUpdating = true
+                
                 if let localizedDescription = localizedDescription {
                     self.progress.localizedDescription = localizedDescription
                 }
@@ -698,30 +889,31 @@ public final class CSProgress {
                 completionHandler()
             }
         }
-        
+    
         var children: [CSProgress] { return [] }
-        
+    
         func addChild(_ child: CSProgress, pendingUnitCount: UnitCount) {
             if #available(macOS 10.11, *) {
-                self.progress.addChild(child._bridgeToObjectiveC(), withPendingUnitCount: Int64(pendingUnitCount))
+                self.progress.addChild(child.bridgeToNSProgress(queue: self.queue), withPendingUnitCount: Int64(pendingUnitCount))
             } else {
-                // Since we can't addChild on older OS versions, create a native wrapper for our child, implicitly add the child to the wrapper, and explicitly add the wrapper to us.
+                // Since we can't addChild on older OS versions, create a shim for our child, implicitly add the child to the shim, and explicitly add the shim to us.
                 // FIXME: this has not been tested yet.
                 self.progress.becomeCurrent(withPendingUnitCount: Int64(pendingUnitCount))
-                let wrapper = Foundation.Progress(totalUnitCount: 1)
+                let shim = Foundation.Progress(totalUnitCount: 1)
                 self.progress.resignCurrent()
                 
-                CSProgress._unconditionallyBridgeFromObjectiveC(wrapper).addChild(child, withPendingUnitCount: 1)
+                CSProgress.bridge(from: shim).addChild(child, withPendingUnitCount: 1)
             }
         }
         
         func removeChild(_ child: CSProgress) {}
         
         var fractionCompletedUpdatedHandler: (() -> ())?
+        var indeterminateHandler: (() -> ())?
         var descriptionUpdatedHandler: (() -> ())?
         var cancellationHandler: (() -> ())?
         
-        private let interestingKeyPaths = ["fractionCompleted", "cancelled", "localizedDescription", "localizedAdditionalDescription"]
+        private let interestingKeyPaths = ["fractionCompleted", "indeterminate", "cancelled", "localizedDescription", "localizedAdditionalDescription"]
         
         private var kvoContext = 0
         
@@ -747,6 +939,8 @@ public final class CSProgress {
                 switch keyPath {
                 case "fractionCompleted":
                     self.fractionCompletedUpdatedHandler.map { queue.addOperation($0) }
+                case "indeterminate":
+                    self.indeterminateHandler.map { queue.addOperation($0) }
                 case "cancelled":
                     self.cancellationHandler.map { queue.addOperation($0) }
                 case "localizedDescription", "localizedAdditionalDescription":
@@ -762,7 +956,7 @@ public final class CSProgress {
     
     /**
      Create a CSProgress which wraps an NSProgress.
-     All updates to the underlying progress object will be performed on the queue, to keep NSProgress's KVO notifications out of the worker thread as much as possible.
+     All updates to the underlying progress object will be performed on the provided queue, to keep NSProgress's KVO notifications out of the worker thread as much as possible.
      However, due to the need to keep the underlying progress object in sync, an operation is enqueued on every update of completedUnitCount regardless of the granularity.
      Therefore, performance is poor when using the resulting object as you would a normal CSProgress object, because this will result in excessive queued operations,
      as well as many KVO notifications sent by NSOperation and NSOperationQueue.
@@ -780,37 +974,35 @@ public final class CSProgress {
      However, an operation to update the underlying NSProgress object will still be enqueued on every update.
      Default value is 0.01.
      
-     - parameter queue: Specifies an operation queue on which the progress object's notifications will be performed.
-     The underlying NSProgress object will also be updated on this queue.
+     - parameter queue: Specifies an operation queue on which the underlying NSProgress object will also be updated.
      The queue's maxConcurrentOperationCount should be set to something low to prevent excessive threads from being created.
      This parameter defaults to the main operation queue.
      */
-    public init<Count: Integer>(wrappedNSProgress: Foundation.Progress, parent: CSProgress?, pendingUnitCount: Count, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) {
-        let imp = NSProgressBacking(progress: wrappedNSProgress, queue: queue)
+    private init<Count: Integer>(wrappedNSProgress: Foundation.Progress, parent: CSProgress?, pendingUnitCount: Count, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) {
+        let backing = NSProgressBacking(progress: wrappedNSProgress, queue: queue)
         
-        self.backing = imp
+        self.backing = backing
         self.parent = parent
         self._portionOfParent = UnitCount(pendingUnitCount.toIntMax())
         self.granularity = granularity
-        self.queue = queue
         
         // These handlers are called as a result of KVO notifications sent by the underlying progress object.
         
-        imp.fractionCompletedUpdatedHandler = {
+        backing.fractionCompletedUpdatedHandler = {
             self.accessSemaphore.wait()
             defer { self.accessSemaphore.signal() }
             
-            self.sendFractionCompletedNotifications()
+            self.sendFractionCompletedNotifications(fractionCompleted: self.backing.fractionCompleted)
         }
         
-        imp.descriptionUpdatedHandler = {
+        backing.descriptionUpdatedHandler = {
             self.accessSemaphore.wait()
             defer { self.accessSemaphore.signal() }
             
             self.sendDescriptionNotifications()
         }
         
-        imp.cancellationHandler = {
+        backing.cancellationHandler = {
             self.accessSemaphore.wait()
             defer { self.accessSemaphore.signal() }
             
@@ -819,98 +1011,140 @@ public final class CSProgress {
         
         self.parent?.addChild(self, withPendingUnitCount: pendingUnitCount)
     }
-}
-
-extension CSProgress: _ObjectiveCBridgeable {
+    
     // An NSProgress subclass that wraps a CSProgress.
     private final class BridgedNSProgress: Foundation.Progress {
-        let progress: CSProgress
+        private(set) weak var progress: CSProgress?
         
         private var fractionCompletedIdentifier: Any?
         private var descriptionIdentifier: Any?
         private var cancellationIdentifier: Any?
         
-        init(progress: CSProgress) {
+        init(progress: CSProgress, queue: OperationQueue = .main) {
             self.progress = progress
             
             super.init(parent: nil, userInfo: nil)
             
-            self.totalUnitCount = progress.totalUnitCount
-            self.completedUnitCount = progress.completedUnitCount
-            self.localizedDescription = progress.localizedDescription
-            self.localizedAdditionalDescription = progress.localizedAdditionalDescription
-            if progress.isCancelled { self.cancel() }
-
+            // Directly access the primitive accessors, because this class will only be created while already protected by the semaphore.
+            super.totalUnitCount = progress.backing.totalUnitCount
+            super.completedUnitCount = progress.backing.completedUnitCount
+            super.localizedDescription = progress.backing.localizedDescription
+            super.localizedAdditionalDescription = progress.backing.localizedAdditionalDescription
+            if progress.backing.isCancelled { super.cancel() }
+            
             // Register notifications on the underlying CSProgress, to update our properties.
             
-            self.fractionCompletedIdentifier = progress.addFractionCompletedNotification { completed, total, _ in
+            self.fractionCompletedIdentifier = progress._addFractionCompletedNotification(onQueue: queue) { completed, total, _ in
                 super.completedUnitCount = completed
                 super.totalUnitCount = total
             }
             
-            self.descriptionIdentifier = progress.addDescriptionNotification { desc, aDesc in
+            self.descriptionIdentifier = progress._addDescriptionNotification(onQueue: queue) { desc, aDesc in
                 super.localizedDescription = desc
                 super.localizedAdditionalDescription = aDesc
             }
             
-            self.cancellationIdentifier = progress.addCancellationNotification {
+            self.cancellationIdentifier = progress._addCancellationNotification(onQueue: queue) {
                 super.cancel()
             }
         }
         
         deinit {
-            self.fractionCompletedIdentifier.map { self.progress.removeFractionCompletedNotification(identifier: $0) }
-            self.descriptionIdentifier.map { self.progress.removeDescriptionNotification(identifier: $0) }
-            self.cancellationIdentifier.map { self.progress.removeCancellationNotification(identifier: $0) }
+            self.fractionCompletedIdentifier.map { self.progress?.removeFractionCompletedNotification(identifier: $0) }
+            self.descriptionIdentifier.map { self.progress?.removeDescriptionNotification(identifier: $0) }
+            self.cancellationIdentifier.map { self.progress?.removeCancellationNotification(identifier: $0) }
         }
         
         override var totalUnitCount: Int64 {
-            didSet { self.progress.totalUnitCount = CSProgress.UnitCount(self.totalUnitCount) }
+            didSet { self.progress?.totalUnitCount = CSProgress.UnitCount(self.totalUnitCount) }
         }
         
         override var completedUnitCount: Int64 {
-            didSet { self.progress.completedUnitCount = CSProgress.UnitCount(self.completedUnitCount) }
+            didSet { self.progress?.completedUnitCount = CSProgress.UnitCount(self.completedUnitCount) }
         }
         
-        override var fractionCompleted: Double { return self.progress.fractionCompleted }
+        override var fractionCompleted: Double { return self.progress?.fractionCompleted ?? 0.0 }
         
         override var localizedDescription: String! {
-            didSet { self.progress.localizedDescription = self.localizedDescription }
+            didSet { self.progress?.localizedDescription = self.localizedDescription }
         }
         
         override var localizedAdditionalDescription: String! {
-            didSet { self.progress.localizedAdditionalDescription = self.localizedAdditionalDescription }
+            didSet { self.progress?.localizedAdditionalDescription = self.localizedAdditionalDescription }
         }
     }
     
+    private var bridgedNSProgress: Foundation.Progress?
+    
+    /**
+     Return an NSProgress object bridged to the receiver.
+     If the receiver is already bridged to an NSProgress object, that object will be returned. Otherwise, one will be created.
+     
+     - parameter queue: If a new NSProgress object is created, configure it to be updated on the provided queue.
+     This queue should either be a serial queue, or should have its maxConcurrentOperationCount property set to a low value
+     to avoid excessive threads being spawned.
+     Defaults to the main operation queue.
+     */
+    public func bridgeToNSProgress(queue: OperationQueue = .main) -> Foundation.Progress {
+        self.accessSemaphore.wait()
+        defer { self.accessSemaphore.signal() }
+        
+        // If we're wrapping an NSProgress, return that. Otherwise wrap ourselves in a BridgedNSProgress.
+        
+        if let backing = self.backing as? NSProgressBacking {
+            return backing.progress
+        } else if let bridged = self.bridgedNSProgress {
+            return bridged
+        } else {
+            let bridged = BridgedNSProgress(progress: self, queue: queue)
+            
+            self.bridgedNSProgress = bridged
+            
+            return bridged
+        }
+    }
+    
+    /**
+     Return a CSProgress object bridged to the provided NSProgress object.
+     If the given NSProgress object is already bridged to a CSProgress object, that object will be returned. Otherwise, one will be created.
+     
+     - parameter ns: The NSProgress object to be bridged to CSProgress.
+     
+     - parameter granularity: If a new CSProgress object is created, its granularity will be set to this value.
+     
+     -parameter queue: If a new CSProgress object is created, configure it to update the original NSProgress object on the provided queue.
+     This queue should either be a serial queue, or should have its maxConcurrentOperationCount property set to a low value
+     to avoid excessive threads being spawned.
+     Defaults to the main operation queue.
+     */
+    public static func bridge(from ns: Foundation.Progress, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) -> CSProgress {
+        // If it's wrapping a CSProgress, return that. Otherwise, wrap that sucker
+        
+        if let bridged = ns as? BridgedNSProgress, let bridgedProgress = bridged.progress {
+            return bridgedProgress
+        } else {
+            return CSProgress(wrappedNSProgress: ns, parent: nil, pendingUnitCount: 0, granularity: granularity, queue: queue)
+        }
+    }
+}
+
+extension CSProgress: _ObjectiveCBridgeable {
     public typealias _ObjectiveCType = Foundation.Progress
     
     public func _bridgeToObjectiveC() -> Foundation.Progress {
-        // If we're wrapping an NSProgress, return that. Otherwise wrap ourselves in a BridgedNSProgress.
-        
-        if let imp = self.backing as? NSProgressBacking {
-            return imp.progress
-        } else {
-            return BridgedNSProgress(progress: self)
-        }
+        return self.bridgeToNSProgress()
     }
     
     public static func _forceBridgeFromObjectiveC(_ ns: Foundation.Progress, result: inout CSProgress?) {
-        result = self._unconditionallyBridgeFromObjectiveC(ns)
+        result = self.bridge(from: ns)
     }
     
     public static func _conditionallyBridgeFromObjectiveC(_ ns: Foundation.Progress, result: inout CSProgress?) -> Bool {
-        result = self._unconditionallyBridgeFromObjectiveC(ns)
+        result = self.bridge(from: ns)
         return true
     }
     
     public static func _unconditionallyBridgeFromObjectiveC(_ ns: Foundation.Progress?) -> CSProgress {
-        // If it's wrapping a CSProgress, return that. Otherwise, wrap that sucker
-        
-        if let bridged = ns as? BridgedNSProgress {
-            return bridged.progress
-        } else {
-            return CSProgress(wrappedNSProgress: ns!, parent: nil, pendingUnitCount: 0)
-        }
+        return self.bridge(from: ns!)
     }
 }

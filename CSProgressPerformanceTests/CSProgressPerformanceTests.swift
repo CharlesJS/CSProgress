@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import CSSwiftExtensions
+import CSProgress
 
 private let granularity = 0.01
 private let numOfEach = 1000000

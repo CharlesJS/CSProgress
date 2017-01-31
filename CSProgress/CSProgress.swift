@@ -1,6 +1,5 @@
 //
 //  CSProgress.swift
-//  CSSwiftExtensions
 //
 //  Created by Charles Srstka on 1/10/16.
 //  Copyright © 2016 Charles Srstka. All rights reserved.
@@ -15,6 +14,7 @@ private protocol CSProgressBacking {
     var totalUnitCount: CSProgress.UnitCount { get }
     var completedUnitCount: CSProgress.UnitCount { get }
     var fractionCompleted: Double { get }
+    var isCompleted: Bool { get }
     var localizedDescription: String { get }
     var localizedAdditionalDescription: String { get }
     var isIndeterminate: Bool { get }
@@ -26,7 +26,7 @@ private protocol CSProgressBacking {
     func set(totalUnitCount: CSProgress.UnitCount?,
              completedUnitCount: CSProgress.UnitCountChangeType?,
              setupHandler: @escaping () -> (),
-             completionHandler: @escaping (_ fractionCompleted: Double) -> ())
+             completionHandler: @escaping (_ fractionCompleted: Double, _ isCompleted: Bool) -> ())
     
     // General-purpose setter for the less frequently changed properties.
     func set(localizedDescription: String?,
@@ -101,6 +101,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     private final class NativeBacking: CSProgressBacking {
         private(set) var totalUnitCount: CSProgress.UnitCount
         private(set) var completedUnitCount: CSProgress.UnitCount = 0
+        var isCompleted: Bool { return self.completedUnitCount == self.totalUnitCount }
         
         var fractionCompleted: Double {
             if self.completedUnitCount >= self.totalUnitCount {
@@ -132,7 +133,7 @@ public final class CSProgress: CustomDebugStringConvertible {
         func set(totalUnitCount: CSProgress.UnitCount?,
                  completedUnitCount changeType: CSProgress.UnitCountChangeType?,
                  setupHandler: @escaping () -> (),
-                 completionHandler: @escaping (_ fractionCompleted: Double) -> ()) {
+                 completionHandler: @escaping (_ fractionCompleted: Double, _ isCompleted: Bool) -> ()) {
             setupHandler()
             
             if let totalUnitCount = totalUnitCount {
@@ -148,7 +149,7 @@ public final class CSProgress: CustomDebugStringConvertible {
                 }
             }
             
-            completionHandler(self.fractionCompleted)
+            completionHandler(self.fractionCompleted, self.isCompleted)
         }
         
         func set(localizedDescription: String?,
@@ -243,10 +244,10 @@ public final class CSProgress: CustomDebugStringConvertible {
             
             let setupHandler = { self.accessSemaphore.wait() }
             
-            self.backing.set(totalUnitCount: newValue, completedUnitCount: nil, setupHandler: setupHandler) { fractionCompleted in
-                defer { self.accessSemaphore.signal() }
-                
-                self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted)
+            self.backing.set(totalUnitCount: newValue, completedUnitCount: nil, setupHandler: setupHandler) { fractionCompleted, isCompleted in
+                self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted, isCompleted: isCompleted) {
+                    self.accessSemaphore.signal()
+                }
             }
         }
     }
@@ -275,18 +276,10 @@ public final class CSProgress: CustomDebugStringConvertible {
         
         let setupHandler = { self.accessSemaphore.wait() }
         
-        self.backing.set(totalUnitCount: nil, completedUnitCount: change, setupHandler: setupHandler) { fractionCompleted in
+        self.backing.set(totalUnitCount: nil, completedUnitCount: change, setupHandler: setupHandler) { fractionCompleted, isCompleted in
             // If our progress is finished, clean up a bit. Remove ourselves from the tree, and update the parent's change count.
-            if fractionCompleted >= 1.0, let parent = self.parent {
-                parent.backing.removeChild(self)
-                self.parent = nil
-                
-                parent.backing.set(totalUnitCount: nil, completedUnitCount: .increment(self._portionOfParent), setupHandler: {}) { _ in
-                    self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted)
-                    self.accessSemaphore.signal()
-                }
-            } else {
-                self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted)
+            
+            self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted, isCompleted: isCompleted) {
                 self.accessSemaphore.signal()
             }
         }
@@ -601,12 +594,21 @@ public final class CSProgress: CustomDebugStringConvertible {
     
     // Fire our fractionCompleted notifications.
     // This method should be protected by our semaphore before calling it.
-    private func sendFractionCompletedNotifications(fractionCompleted: Double) {
+    private func sendFractionCompletedNotifications(fractionCompleted: Double, isCompleted: Bool, completionHandler: @escaping () -> ()) {
         let lastNotifiedFractionCompleted = self.lastNotifiedFractionCompleted
         let notifications = self.fractionCompletedNotifications.values
         let parent = self.parent
         
-        if fractionCompleted >= 1.0 || abs(fractionCompleted - lastNotifiedFractionCompleted) >= self.granularity {
+        if isCompleted, let parent = self.parent {
+            parent.backing.removeChild(self)
+            self.parent = nil
+            
+            parent.backing.set(totalUnitCount: nil, completedUnitCount: .increment(self._portionOfParent), setupHandler: {}) { _ in
+                self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted, isCompleted: isCompleted) {
+                    parent.sendFractionCompletedNotifications(fractionCompleted: parent.backing.fractionCompleted, isCompleted: parent.backing.isCompleted, completionHandler: completionHandler)
+                }
+            }
+        } else if abs(fractionCompleted - lastNotifiedFractionCompleted) >= self.granularity {
             let completedUnitCount = self.backing.completedUnitCount
             let totalUnitCount = self.backing.totalUnitCount
             
@@ -616,8 +618,15 @@ public final class CSProgress: CustomDebugStringConvertible {
                 }
             }
             
-            parent.map { $0.sendFractionCompletedNotifications(fractionCompleted: $0.backing.fractionCompleted) }
             self.lastNotifiedFractionCompleted = fractionCompleted
+            
+            if let parent = parent {
+                parent.sendFractionCompletedNotifications(fractionCompleted: parent.backing.fractionCompleted, isCompleted: parent.backing.isCompleted, completionHandler: completionHandler)
+            } else {
+                completionHandler()
+            }
+        } else {
+            completionHandler()
         }
     }
     
@@ -826,6 +835,7 @@ public final class CSProgress: CustomDebugStringConvertible {
         var totalUnitCount: CSProgress.UnitCount { return self.progress.totalUnitCount }
         var completedUnitCount: CSProgress.UnitCount { return self.progress.completedUnitCount }
         var fractionCompleted: Double { return self.progress.fractionCompleted }
+        var isCompleted: Bool { return self.completedUnitCount == self.totalUnitCount }
         var localizedDescription: String { return self.progress.localizedDescription }
         var localizedAdditionalDescription: String { return self.progress.localizedAdditionalDescription }
         var isIndeterminate: Bool { return self.progress.isIndeterminate }
@@ -834,7 +844,7 @@ public final class CSProgress: CustomDebugStringConvertible {
         func set(totalUnitCount: CSProgress.UnitCount?,
                  completedUnitCount changeType: CSProgress.UnitCountChangeType?,
                  setupHandler: @escaping () -> (),
-                 completionHandler: @escaping (_ fractionCompleted: Double) -> ()) {
+                 completionHandler: @escaping (_ fractionCompleted: Double, _ isCompleted: Bool) -> ()) {
             // Make our changes on the queue, to avoid jamming up the worker thread with KVO notifications.
             queue.addOperation {
                 setupHandler()
@@ -858,7 +868,7 @@ public final class CSProgress: CustomDebugStringConvertible {
                 
                 self.isUpdating = false
                 
-                completionHandler(self.fractionCompleted)
+                completionHandler(self.fractionCompleted, self.isCompleted)
             }
         }
         
@@ -990,9 +1000,10 @@ public final class CSProgress: CustomDebugStringConvertible {
         
         backing.fractionCompletedUpdatedHandler = {
             self.accessSemaphore.wait()
-            defer { self.accessSemaphore.signal() }
             
-            self.sendFractionCompletedNotifications(fractionCompleted: self.backing.fractionCompleted)
+            self.sendFractionCompletedNotifications(fractionCompleted: self.backing.fractionCompleted, isCompleted: self.backing.isCompleted) {
+                self.accessSemaphore.signal()
+            }
         }
         
         backing.descriptionUpdatedHandler = {

@@ -7,7 +7,7 @@
 //
 
 import XCTest
-@testable import CSSwiftExtensions
+@testable import CSProgress
 
 class CSProgressTests: XCTestCase {
     private struct ProgressPair {

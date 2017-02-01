@@ -116,4 +116,88 @@ Unfortunately, each NSProgress object is allowed to have one and only one of the
 on a particular NSProgress object, you’d better be sure that no one else also wanted to be informed of cancellation on that object,
 or you’ll clobber it. There are workarounds to this, but it’s not a good UI.
 
-# To Be Continued when I get time to finish this document
+#### Building Progress Trees
+
+NSProgress supports two methods of building trees of progress objects. Unfortunately, they are both flawed:
+
+##### Implicit Tree Composition
+
+NSProgress trees are built implicitly by calling becomeCurrent(withPendingUnitCount:) on an NSProgress object. This causes said object to be stashed in thread-local storage as the "current" NSProgress. Subsequently, the next NSProgress object that is created with init(totalUnitCount:) will be added to the current NSProgress as a child. This has the advantage of providing loose coupling of progress objects, freeing subtasks from having to know whether they are part of a larger tree, or what portion of the overall task they represent. Unfortunately, implicit tree composition has a lot of problems, not the least of which is that it is impossible to know whether any given API supports implicit NSProgress composition without either empirical testing or looking at the source code. Implicit tree composition is also awkward to use with multithreaded code, relying as it does on thread-local variables.
+
+##### Explicit Tree Composition
+
+In OS X 10.11 (“El Capitan”), NSProgress introduced a new initializer that allowed trees to be built explicitly:
+
+```Swift
+init(totalUnitCount: Int64, parent: Progress, pendingUnitCount: Int64)
+```
+
+This method allows much greater clarity, but unfortunately it sacrifices the loose coupling provided by the implicit method, since it requires the caller of the initializer to know both the total unit count of the progress object to be created, and the pending unit count of its parent. So to translate a function written using implicit composition:
+
+```Swift
+func foo() {
+  let progress = Progress(totalUnitCount: 10) // we don't know about the parent's pending unit count, or need to know it
+  
+  ... do something ...
+}
+```
+
+One must include not one, but two parameters in order to provide the same functionality:
+
+```Swift
+func foo(progress parentProgress: Progress, pendingUnitCount: Int64) {
+  let progress = Progress(totalUnitCount: 10, parent: parentProgress, pendingUnitCount: pendingUnitCount)
+  
+  ... do something ...
+}
+```
+
+This adds considerable bloat to the function’s signature.
+
+## My solution: CSProgress
+
+CSProgress is a Swift-native class intended to be a drop-in replacement for NSProgress. It does not yet support all of NSProgress’s features, but serves as a test case demonstrating the improvements that can be made to NSProgress.
+
+CSProgress supports the following features:
+
+* Fully Swift-native
+* Fully blocks/closures-based interface for observing changes
+* Multiple closure-based observers can be created for the same property for any given CSProgress
+* Customizable granularity, allowing notifications to be sent when the fractionCompleted property changes by a certain amount, rather than every time completedUnitCount is updated
+* Sends all its notifications on a customizable operation queue, rather than on the current thread (defaults to the main queue)
+* Bridgeable to and from NSProgress, allowing it to be inserted into trees of NSProgress objects. Bridged NSProgress objects are updated on a customizable queue as well, meaning that KVO notifications on a bridged NSProgress object can be directly observed by UI elements if the only progress objects being updated are CSProgress. This also has the effect of keeping NSProgress’s KVO notifications from slowing down the worker thread.
+* Uses dispatch semaphores rather than NSLocks, as they provided the best performance out of the options that I tried.
+* Supports incrementing the completedUnitCount as an atomic operation, rather than having to take the semaphore twice, once to read the old value, and again to write the new one.
+* Supports explicit composition, even on versions of OS X/macOS earlier than 10.11 (not yet tested)
+* Uses generics to support all integer types as arguments, rather than only Int64
+* Adds a wrapper struct encapsulating a parent progress object and its pending unit count, which can be passed to child tasks in order to build progress trees explicitly while still enjoying the loose coupling of the implicit composition method
+* Much better performance than NSProgress. On my 2013 Retina MacBook Pro, incrementing each progress object in a tree consisting of a root node and four child nodes from 0 to 1,000,000 each takes:
+ * NSProgress with no observers and no autorelease pool: 19.19 seconds (although it bloated the app’s memory size to over 4.5 GB)
+ * NSProgress with an autorelease pool: 26.74 seconds
+ * NSProgress with a KVO observer and no autorelease pool: 54.78 seconds (also consuming a lot of memory)
+ * NSProgress with a KVO observer and an autorelease pool: 61.28 seconds
+ * CSProgress with no observers: 1.26 seconds
+ * CSProgress with an observer: 1.25 seconds
+ 
+ So as we can see, CSProgress performs a little more than an order of magnitude better than NSProgress when it is not being observed, and several times that when observers are involved.
+ 
+CSProgress also includes a convenience struct for encapsulating a parent progress object and its pending unit count, allowing both to be passed as one argument:
+
+```Swift
+func foo(parentProgress: Progress.ParentReference) {
+  let progress = parentProgress.makeChild(totalUnitCount: 10)
+  
+  ... do something ...
+}
+
+let rootProgress = CSProgress(totalUnitCount: 10, parent: nil, pendingUnitCount: 0)
+
+foo(parentProgress: rootProgress.pass(pendingUnitCount: 5)
+```
+
+# To Do:
+ 
+ * Add support for NSProgress features not yet handled
+  * Pause and resume
+  * Publish and subscribe
+  * Arbitrary user info dictionaries

@@ -2,7 +2,7 @@
 //  CSProgress.swift
 //
 //  Created by Charles Srstka on 1/10/16.
-//  Copyright © 2016 Charles Srstka. All rights reserved.
+//  Copyright © 2016-2017 Charles Srstka. All rights reserved.
 //
 
 import Foundation

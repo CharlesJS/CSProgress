@@ -14,8 +14,8 @@ public final class CSProgress: CustomDebugStringConvertible {
         // separate the backing out into a separate private structure. We have separate implementations for an all-native CSProgress and one that's wrapping an NSProgress.
         // All calls to methods on the backing should be protected by the progress's semaphore.
         
-        case swift(NativeBacking)
-        case objectiveC(NSProgressBacking)
+        case swift(SwiftBacking)
+        case objectiveC(ObjectiveCBacking)
     }
     
     // We allow increments as an atomic operation, for better performance.
@@ -74,7 +74,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     }
     
     // The backing for a native Swift CSProgress.
-    private final class NativeBacking {
+    private final class SwiftBacking {
         private(set) var totalUnitCount: CSProgress.UnitCount
         private(set) var completedUnitCount: CSProgress.UnitCount = 0
         var isCompleted: Bool { return self.completedUnitCount == self.totalUnitCount }
@@ -197,7 +197,7 @@ public final class CSProgress: CustomDebugStringConvertible {
      Default value is 0.01.
      */
     public init<Total: Integer, Pending: Integer>(totalUnitCount: Total, parent: CSProgress?, pendingUnitCount: Pending, granularity: Double = CSProgress.defaultGranularity) {
-        self.backing = .swift(NativeBacking(totalUnitCount: UnitCount(totalUnitCount.toIntMax())))
+        self.backing = .swift(SwiftBacking(totalUnitCount: UnitCount(totalUnitCount.toIntMax())))
         self.parent = parent
         self._portionOfParent = UnitCount(totalUnitCount.toIntMax())
         self.granularity = granularity
@@ -874,7 +874,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     // Warning: The code gets notably uglier beyond this point. All hope abandon, ye who enter here!
     
     // The backing for a CSProgress wrapping an NSProgress.
-    fileprivate final class NSProgressBacking: NSObject {
+    fileprivate final class ObjectiveCBacking: NSObject {
         let progress: Foundation.Progress
         let queue: OperationQueue
         
@@ -1083,7 +1083,7 @@ public final class CSProgress: CustomDebugStringConvertible {
      This parameter defaults to the main operation queue.
      */
     private init<Count: Integer>(wrappedNSProgress: Foundation.Progress, parent: CSProgress?, pendingUnitCount: Count, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) {
-        let backing = NSProgressBacking(progress: wrappedNSProgress, queue: queue)
+        let backing = ObjectiveCBacking(progress: wrappedNSProgress, queue: queue)
         
         self.backing = .objectiveC(backing)
         self.parent = parent

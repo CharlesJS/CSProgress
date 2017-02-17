@@ -179,7 +179,7 @@ CSProgress supports the following features:
  * CSProgress with no observers: 1.06 seconds
  * CSProgress with an observer: 1.04 seconds
  
- As you can see, having an observer has no noticeable effect on performance (in this test, the version with an observer actually took slightly less time). As a result, CSProgress performs a little more than an order of magnitude better than NSProgress when it is not being observed, and several times that when observers are involved.
+ As you can see, having an observer has no noticeable effect on performance (in this test, the version with an observer actually took slightly less time). As a result, CSProgress performs about twice an order of magnitude better than NSProgress when it is not being observed, and several times that when observers are involved.
  
 CSProgress also includes a convenience struct for encapsulating a parent progress object and its pending unit count, allowing both to be passed as one argument:
 

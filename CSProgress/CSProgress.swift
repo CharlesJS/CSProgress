@@ -7,41 +7,17 @@
 
 import Foundation
 
-// Since we are going for source compatibility with NSProgress and thus need to use standard init() methods, and since we can't have factory initializers,
-// separate the backing out into a separate private structure. We have separate implementations for an all-native CSProgress and one that's wrapping an NSProgress.
-// All calls to methods on the backing should be protected by the progress's semaphore.
-private protocol CSProgressBacking {
-    var totalUnitCount: CSProgress.UnitCount { get }
-    var completedUnitCount: CSProgress.UnitCount { get }
-    var fractionCompleted: Double { get }
-    var isCompleted: Bool { get }
-    var localizedDescription: String { get }
-    var localizedAdditionalDescription: String { get }
-    var isIndeterminate: Bool { get }
-    var isCancelled: Bool { get }
-    
-    // Setter for the properties affecting fractionCompleted. Pass nil to leave a property untouched.
-    // Returning the new fraction in the completion handler allows us to reduce dynamic dispatch by avoiding an extra
-    // call to the backing, which helps eke out a little extra performance.
-    func set(totalUnitCount: CSProgress.UnitCount?,
-             completedUnitCount: CSProgress.UnitCountChangeType?,
-             setupHandler: @escaping () -> (),
-             completionHandler: @escaping (_ fractionCompleted: Double, _ isCompleted: Bool) -> ())
-    
-    // General-purpose setter for the less frequently changed properties.
-    func set(localizedDescription: String?,
-             localizedAdditionalDescription: String?,
-             cancel: Bool,
-             setupHandler: @escaping () -> (),
-             completionHandler: @escaping () -> ())
-    
-    var children: [CSProgress] { get }
-    func addChild(_ child: CSProgress, pendingUnitCount: CSProgress.UnitCount)
-    func removeChild(_ child: CSProgress)
-}
-
 // 'final' is apparently needed to conform to _ObjectiveCBridgeable. It also results in better performance.
 public final class CSProgress: CustomDebugStringConvertible {
+    private enum Backing {
+        // Since we are going for source compatibility with NSProgress and thus need to use standard init() methods, and since we can't have factory initializers,
+        // separate the backing out into a separate private structure. We have separate implementations for an all-native CSProgress and one that's wrapping an NSProgress.
+        // All calls to methods on the backing should be protected by the progress's semaphore.
+        
+        case swift(NativeBacking)
+        case objectiveC(NSProgressBacking)
+    }
+    
     // We allow increments as an atomic operation, for better performance.
     fileprivate enum UnitCountChangeType {
         case set(CSProgress.UnitCount)
@@ -81,7 +57,7 @@ public final class CSProgress: CustomDebugStringConvertible {
             return CSProgress(totalUnitCount: totalUnitCount, parent: self.progress, pendingUnitCount: self.pendingUnitCount)
         }
         
-        /// For the case where the child operation is atomic, just mark the pending units as complete rather than 
+        /// For the case where the child operation is atomic, just mark the pending units as complete rather than
         /// going to the trouble of creating a child progress.
         /// Can also be useful for error conditions where the operation should simply be skipped.
         public func markComplete() {
@@ -98,7 +74,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     }
     
     // The backing for a native Swift CSProgress.
-    private final class NativeBacking: CSProgressBacking {
+    private final class NativeBacking {
         private(set) var totalUnitCount: CSProgress.UnitCount
         private(set) var completedUnitCount: CSProgress.UnitCount = 0
         var isCompleted: Bool { return self.completedUnitCount == self.totalUnitCount }
@@ -113,7 +89,7 @@ public final class CSProgress: CustomDebugStringConvertible {
             }
             
             let myPortion = Double(self.completedUnitCount)
-            let childrenPortion = self.children.reduce(0) { $0 + $1.backing.fractionCompleted * Double($1._portionOfParent) }
+            let childrenPortion = self.children.reduce(0) { $0 + $1._fractionCompleted * Double($1._portionOfParent) }
             
             return (myPortion + childrenPortion) / Double(self.totalUnitCount)
         }
@@ -129,6 +105,12 @@ public final class CSProgress: CustomDebugStringConvertible {
         init(totalUnitCount: UnitCount) {
             self.totalUnitCount = totalUnitCount
         }
+        
+        // Setter for the properties affecting fractionCompleted. Pass nil to leave a property untouched.
+        // Returning the new fraction in the completion handler allows us to save a switch by avoiding an extra
+        // call to the backing, which helps eke out a little extra performance (this made more difference back
+        // when this was a protocol and involved vtable dispatch; it may be possible to simplify now without
+        // losing too much)
         
         func set(totalUnitCount: CSProgress.UnitCount?,
                  completedUnitCount changeType: CSProgress.UnitCountChangeType?,
@@ -151,6 +133,8 @@ public final class CSProgress: CustomDebugStringConvertible {
             
             completionHandler(self.fractionCompleted, self.isCompleted)
         }
+        
+        // General-purpose setter for the less frequently changed properties.
         
         func set(localizedDescription: String?,
                  localizedAdditionalDescription: String?,
@@ -213,7 +197,7 @@ public final class CSProgress: CustomDebugStringConvertible {
      Default value is 0.01.
      */
     public init<Total: Integer, Pending: Integer>(totalUnitCount: Total, parent: CSProgress?, pendingUnitCount: Pending, granularity: Double = CSProgress.defaultGranularity) {
-        self.backing = NativeBacking(totalUnitCount: UnitCount(totalUnitCount.toIntMax()))
+        self.backing = .swift(NativeBacking(totalUnitCount: UnitCount(totalUnitCount.toIntMax())))
         self.parent = parent
         self._portionOfParent = UnitCount(totalUnitCount.toIntMax())
         self.granularity = granularity
@@ -222,7 +206,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     }
     
     // The backing for this progress. All calls to methods and properties on the backing should be protected by our semaphore.
-    fileprivate var backing: CSProgressBacking
+    private var backing: Backing
     
     // The access semaphore, allowing us to be thread-safe. A semaphore was chosen, because it performs better here than an NSLock or a dispatch queue.
     private var accessSemaphore = DispatchSemaphore(value: 1)
@@ -236,19 +220,19 @@ public final class CSProgress: CustomDebugStringConvertible {
             self.accessSemaphore.wait()
             defer { self.accessSemaphore.signal() }
             
-            return self.backing.totalUnitCount
+            return self._totalUnitCount
         }
         set {
-            // For the NSProgress-backed type, the setters will be called asynchronously, to prevent KVO notifications from being fired on our own thread (and to improve performance).
-            // Therefore, pass closures to .set() to let it take and release the semaphore rather than doing it ourselves.
-            
-            let setupHandler = { self.accessSemaphore.wait() }
-            
-            self.backing.set(totalUnitCount: newValue, completedUnitCount: nil, setupHandler: setupHandler) { fractionCompleted, isCompleted in
-                self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted, isCompleted: isCompleted) {
-                    self.accessSemaphore.signal()
-                }
-            }
+            self.updateUnitCount(totalUnitCount: newValue, completedUnitCount: nil)
+        }
+    }
+    
+    public var _totalUnitCount: UnitCount {
+        switch self.backing {
+        case let .swift(backing):
+            return backing.totalUnitCount
+        case let .objectiveC(backing):
+            return backing.totalUnitCount
         }
     }
     
@@ -258,35 +242,28 @@ public final class CSProgress: CustomDebugStringConvertible {
             self.accessSemaphore.wait()
             defer { self.accessSemaphore.signal() }
             
-            return self.backing.completedUnitCount
+            return self._completedUnitCount
         }
         set {
-            self.updateUnitCount(.set(newValue))
+            self.updateUnitCount(totalUnitCount: nil, completedUnitCount: .set(newValue))
         }
-    }
-
-    /// Perform increment as one atomic operation, eliminating an unnecessary semaphore wait and increasing performance.
-    public func incrementCompletedUnitCount<Count: Integer>(by interval: Count) {
-        self.updateUnitCount(.increment(UnitCount(interval.toIntMax())))
     }
     
-    private func updateUnitCount(_ change: UnitCountChangeType) {
-        // For the NSProgress-backed type, the setters will be called asynchronously, to prevent KVO notifications from being fired on our own thread (and to improve performance).
-        // Therefore, pass closures to .set() to let it take and release the semaphore rather than doing it ourselves.
-        
-        let setupHandler = { self.accessSemaphore.wait() }
-        
-        self.backing.set(totalUnitCount: nil, completedUnitCount: change, setupHandler: setupHandler) { fractionCompleted, isCompleted in
-            // If our progress is finished, clean up a bit. Remove ourselves from the tree, and update the parent's change count.
-            
-            self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted, isCompleted: isCompleted) {
-                self.accessSemaphore.signal()
-            }
+    private var _completedUnitCount: UnitCount {
+        switch self.backing {
+        case let .swift(backing):
+            return backing.completedUnitCount
+        case let .objectiveC(backing):
+            return backing.completedUnitCount
         }
     }
-
+    
+    /// Perform increment as one atomic operation, eliminating an unnecessary semaphore wait and increasing performance.
+    public func incrementCompletedUnitCount<Count: Integer>(by interval: Count) {
+        self.updateUnitCount(totalUnitCount: nil, completedUnitCount: .increment(UnitCount(interval.toIntMax())))
+    }
+    
     // The portion of the parent's unit count represented by the progress object.
-    private var _portionOfParent: UnitCount
     private var portionOfParent: UnitCount {
         get {
             self.accessSemaphore.wait()
@@ -301,13 +278,32 @@ public final class CSProgress: CustomDebugStringConvertible {
             self._portionOfParent = newValue
         }
     }
+    private var _portionOfParent: UnitCount
+    
+    private var _isCompleted: Bool {
+        switch self.backing {
+        case let .swift(backing):
+            return backing.isCompleted
+        case let .objectiveC(backing):
+            return backing.isCompleted
+        }
+    }
     
     /// The fraction of the overall work completed by this progress object, including work done by any children it may have.
     public var fractionCompleted: Double {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
-        return self.backing.fractionCompleted
+        return self._fractionCompleted
+    }
+    
+    private var _fractionCompleted: Double {
+        switch self.backing {
+        case let .swift(backing):
+            return backing.fractionCompleted
+        case let .objectiveC(backing):
+            return backing.fractionCompleted
+        }
     }
     
     //// Indicates whether the tracked progress is indeterminate.
@@ -315,7 +311,16 @@ public final class CSProgress: CustomDebugStringConvertible {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
-        return self.backing.isIndeterminate
+        return self._isIndeterminate
+    }
+    
+    private var _isIndeterminate: Bool {
+        switch self.backing {
+        case let .swift(backing):
+            return backing.isIndeterminate
+        case let .objectiveC(backing):
+            return backing.isIndeterminate
+        }
     }
     
     /// Indicates whether the receiver is tracking work that has been cancelled.
@@ -323,19 +328,23 @@ public final class CSProgress: CustomDebugStringConvertible {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
-        if let parent = self.parent, parent.backing.isCancelled { return true }
+        if let parent = self.parent, parent._isCancelled { return true }
         
-        return self.backing.isCancelled
+        return self._isCancelled
+    }
+    
+    private var _isCancelled: Bool {
+        switch self.backing {
+        case let .swift(backing):
+            return backing.isCancelled
+        case let .objectiveC(backing):
+            return backing.isCancelled
+        }
     }
     
     /// Cancel progress tracking.
     public func cancel() {
-        let setupHandler = { self.accessSemaphore.wait() }
-        
-        self.backing.set(localizedDescription: nil, localizedAdditionalDescription: nil, cancel: true, setupHandler: setupHandler) {
-            self.sendCancellationNotifications()
-            self.accessSemaphore.signal()
-        }
+        self.updateMetadata(localizedDescription: nil, localizedAdditionalDescription: nil, cancel: true)
     }
     
     /// A localized description of progress tracked by the receiver.
@@ -344,15 +353,19 @@ public final class CSProgress: CustomDebugStringConvertible {
             self.accessSemaphore.wait()
             defer { self.accessSemaphore.signal() }
             
-            return self.backing.localizedDescription
+            return self._localizedDescription
         }
         set {
-            let setupHandler = { self.accessSemaphore.wait() }
-            
-            self.backing.set(localizedDescription: newValue, localizedAdditionalDescription: nil, cancel: false, setupHandler: setupHandler) {
-                self.sendDescriptionNotifications()
-                self.accessSemaphore.signal()
-            }
+            self.updateMetadata(localizedDescription: newValue, localizedAdditionalDescription: nil, cancel: false)
+        }
+    }
+    
+    private var _localizedDescription: String {
+        switch self.backing {
+        case let .swift(backing):
+            return backing.localizedDescription
+        case let .objectiveC(backing):
+            return backing.localizedDescription
         }
     }
     
@@ -362,15 +375,68 @@ public final class CSProgress: CustomDebugStringConvertible {
             self.accessSemaphore.wait()
             defer { self.accessSemaphore.signal() }
             
-            return self.backing.localizedAdditionalDescription
+            return self._localizedAdditionalDescription
         }
         set {
-            let setupHandler = { self.accessSemaphore.wait() }
+            self.updateMetadata(localizedDescription: nil, localizedAdditionalDescription: newValue, cancel: false)
+        }
+    }
+    
+    private var _localizedAdditionalDescription: String {
+        switch self.backing {
+        case let .swift(backing):
+            return backing.localizedAdditionalDescription
+        case let .objectiveC(backing):
+            return backing.localizedAdditionalDescription
+        }
+    }
+    
+    private func updateUnitCount(totalUnitCount: UnitCount?, completedUnitCount: UnitCountChangeType?) {
+        // For the NSProgress-backed type, the setters will be called asynchronously, to prevent KVO notifications from being fired on our own thread (and to improve performance).
+        // Therefore, pass closures to .set() to let it take and release the semaphore rather than doing it ourselves.
+        
+        let setupHandler = { self.accessSemaphore.wait() }
+        
+        let completionHandler = { (fractionCompleted: Double, isCompleted: Bool) in
+            // If our progress is finished, clean up a bit. Remove ourselves from the tree, and update the parent's change count.
             
-            self.backing.set(localizedDescription: nil, localizedAdditionalDescription: newValue, cancel: false, setupHandler: setupHandler) {
-                self.sendDescriptionNotifications()
+            self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted, isCompleted: isCompleted) {
                 self.accessSemaphore.signal()
             }
+        }
+        
+        self._updateUnitCount(totalUnitCount: totalUnitCount, completedUnitCount: completedUnitCount, setupHandler: setupHandler, completionHandler: completionHandler)
+    }
+    
+    private func _updateUnitCount(totalUnitCount: UnitCount?,
+                                  completedUnitCount: UnitCountChangeType?,
+                                  setupHandler: @escaping () -> (),
+                                  completionHandler: @escaping (_ fractionCompleted: Double, _ isCompleted: Bool) -> ()) {
+        switch self.backing {
+        case let .swift(backing):
+            backing.set(totalUnitCount: totalUnitCount, completedUnitCount: completedUnitCount, setupHandler: setupHandler, completionHandler: completionHandler)
+        case let .objectiveC(backing):
+            backing.set(totalUnitCount: totalUnitCount, completedUnitCount: completedUnitCount, setupHandler: setupHandler, completionHandler: completionHandler)
+        }
+    }
+    
+    private func updateMetadata(localizedDescription: String?, localizedAdditionalDescription: String?, cancel: Bool) {
+        let setupHandler = { self.accessSemaphore.wait() }
+        
+        let completionHandler = {
+            self.sendDescriptionNotifications()
+            self.accessSemaphore.signal()
+        }
+        
+        self._updateMetadata(localizedDescription: localizedDescription, localizedAdditionalDescription: localizedAdditionalDescription, cancel: cancel, setupHandler: setupHandler, completionHandler: completionHandler)
+    }
+    
+    private func _updateMetadata(localizedDescription: String?, localizedAdditionalDescription: String?, cancel: Bool, setupHandler: @escaping () -> (), completionHandler: @escaping () -> ()) {
+        switch self.backing {
+        case let .swift(backing):
+            backing.set(localizedDescription: localizedDescription, localizedAdditionalDescription: localizedAdditionalDescription, cancel: cancel, setupHandler: setupHandler, completionHandler: completionHandler)
+        case let .objectiveC(backing):
+            backing.set(localizedDescription: localizedDescription, localizedAdditionalDescription: localizedAdditionalDescription, cancel: cancel, setupHandler: setupHandler, completionHandler: completionHandler)
         }
     }
     
@@ -389,6 +455,15 @@ public final class CSProgress: CustomDebugStringConvertible {
         return ParentReference(progress: self, pendingUnitCount: UnitCount(pendingUnitCount.toIntMax()))
     }
     
+    private var _children: [CSProgress] {
+        switch self.backing {
+        case let .swift(backing):
+            return backing.children
+        case let .objectiveC(backing):
+            return backing.children
+        }
+    }
+    
     /**
      Add a progress object as a child of a progress tree. The inUnitCount indicates the expected work for the progress unit.
      
@@ -402,8 +477,17 @@ public final class CSProgress: CustomDebugStringConvertible {
         
         // Progress objects in the same family tree share a semaphore to keep their values synced and to prevent shenanigans
         // (particularly when calculating fractionCompleted values).
-        self.backing.addChild(child, pendingUnitCount: UnitCount(pendingUnitCount.toIntMax()))
+        self._addChild(child, withPendingUnitCount: UnitCount(pendingUnitCount.toIntMax()))
         child.accessSemaphore = self.accessSemaphore
+    }
+    
+    private func _addChild(_ child: CSProgress, withPendingUnitCount pendingUnitCount: UnitCount) {
+        switch self.backing {
+        case let .swift(backing):
+            backing.addChild(child, pendingUnitCount: pendingUnitCount)
+        case let .objectiveC(backing):
+            backing.addChild(child, pendingUnitCount: pendingUnitCount)
+        }
     }
     
     // Remove a progress object from our progress tree.
@@ -411,9 +495,18 @@ public final class CSProgress: CustomDebugStringConvertible {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
-        self.backing.removeChild(child)
+        self._removeChild(child)
         child.parent = nil
         child.accessSemaphore = DispatchSemaphore(value: 1)
+    }
+    
+    private func _removeChild(_ child: CSProgress) {
+        switch self.backing {
+        case let .swift(backing):
+            backing.removeChild(child)
+        case let .objectiveC(backing):
+            backing.removeChild(child)
+        }
     }
     
     private struct CancellationNotificationWrapper {
@@ -579,7 +672,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     // This method should be protected by our semaphore before calling it.
     private func sendCancellationNotifications() {
         let notifications = self.cancellationNotifications.values
-        let children = self.backing.children
+        let children = self._children
         
         for eachNotification in notifications {
             eachNotification.queue.addOperation {
@@ -600,17 +693,17 @@ public final class CSProgress: CustomDebugStringConvertible {
         let parent = self.parent
         
         if isCompleted, let parent = self.parent {
-            parent.backing.removeChild(self)
+            parent._removeChild(self)
             self.parent = nil
             
-            parent.backing.set(totalUnitCount: nil, completedUnitCount: .increment(self._portionOfParent), setupHandler: {}) { _ in
+            parent._updateUnitCount(totalUnitCount: nil, completedUnitCount: .increment(self._portionOfParent), setupHandler: {}) { _ in
                 self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted, isCompleted: isCompleted) {
-                    parent.sendFractionCompletedNotifications(fractionCompleted: parent.backing.fractionCompleted, isCompleted: parent.backing.isCompleted, completionHandler: completionHandler)
+                    parent.sendFractionCompletedNotifications(fractionCompleted: parent._fractionCompleted, isCompleted: parent._isCompleted, completionHandler: completionHandler)
                 }
             }
         } else if abs(fractionCompleted - lastNotifiedFractionCompleted) >= self.granularity {
-            let completedUnitCount = self.backing.completedUnitCount
-            let totalUnitCount = self.backing.totalUnitCount
+            let completedUnitCount = self._completedUnitCount
+            let totalUnitCount = self._totalUnitCount
             
             for eachNotification in notifications {
                 eachNotification.queue.addOperation {
@@ -621,7 +714,7 @@ public final class CSProgress: CustomDebugStringConvertible {
             self.lastNotifiedFractionCompleted = fractionCompleted
             
             if let parent = parent {
-                parent.sendFractionCompletedNotifications(fractionCompleted: parent.backing.fractionCompleted, isCompleted: parent.backing.isCompleted, completionHandler: completionHandler)
+                parent.sendFractionCompletedNotifications(fractionCompleted: parent._fractionCompleted, isCompleted: parent._isCompleted, completionHandler: completionHandler)
             } else {
                 completionHandler()
             }
@@ -633,8 +726,8 @@ public final class CSProgress: CustomDebugStringConvertible {
     // Fire our description notifications.
     // This method should be protected by our semaphore before calling it.
     private func sendDescriptionNotifications() {
-        let description = self.backing.localizedDescription
-        let additionalDescription = self.backing.localizedAdditionalDescription
+        let description = self._localizedDescription
+        let additionalDescription = self._localizedAdditionalDescription
         let notifications = self.descriptionNotifications.values
         
         for eachNotification in notifications {
@@ -655,15 +748,16 @@ public final class CSProgress: CustomDebugStringConvertible {
         var desc = "<\(String(describing: type(of: self))) 0x\(String(ObjectIdentifier(self).hashValue, radix: 16)))>"
         
         desc += " : Parent: " + (self.parent.map { "0x\(String(ObjectIdentifier($0).hashValue, radix: 16))" } ?? "nil")
-        desc += " / Fraction completed: \(self.backing.fractionCompleted) / Completed: \(self.backing.completedUnitCount) of \(self.backing.totalUnitCount)"
+        desc += " / Fraction completed: \(self._fractionCompleted) / Completed: \(self._completedUnitCount) of \(self._totalUnitCount)"
         
-        if self.backing is NativeBacking {
+        switch self.backing {
+        case .swift:
             desc += " (native)"
-        } else if let nsBacking = self.backing as? NSProgressBacking {
-            desc += " (wrapping: 0x\(String(ObjectIdentifier(nsBacking.progress).hashValue, radix: 16)))"
+        case let .objectiveC(backing):
+            desc += " (wrapping: 0x\(String(ObjectIdentifier(backing.progress).hashValue, radix: 16)))"
         }
         
-        for eachChild in self.backing.children {
+        for eachChild in self._children {
             for eachLine in eachChild._debugDescription.components(separatedBy: "\n") {
                 desc += "\n\t\(eachLine)"
             }
@@ -768,7 +862,7 @@ public final class CSProgress: CustomDebugStringConvertible {
         
         if let currentNS = Foundation.Progress.current() {
             let bridged = self.bridgeToNSProgress()
-                
+            
             if bridged === currentNS {
                 bridged.resignCurrent()
             }
@@ -780,7 +874,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     // Warning: The code gets notably uglier beyond this point. All hope abandon, ye who enter here!
     
     // The backing for a CSProgress wrapping an NSProgress.
-    fileprivate final class NSProgressBacking: NSObject, CSProgressBacking {
+    fileprivate final class NSProgressBacking: NSObject {
         let progress: Foundation.Progress
         let queue: OperationQueue
         
@@ -899,9 +993,9 @@ public final class CSProgress: CustomDebugStringConvertible {
                 completionHandler()
             }
         }
-    
+        
         var children: [CSProgress] { return [] }
-    
+        
         func addChild(_ child: CSProgress, pendingUnitCount: UnitCount) {
             if #available(macOS 10.11, *) {
                 self.progress.addChild(child.bridgeToNSProgress(queue: self.queue), withPendingUnitCount: Int64(pendingUnitCount))
@@ -991,33 +1085,39 @@ public final class CSProgress: CustomDebugStringConvertible {
     private init<Count: Integer>(wrappedNSProgress: Foundation.Progress, parent: CSProgress?, pendingUnitCount: Count, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) {
         let backing = NSProgressBacking(progress: wrappedNSProgress, queue: queue)
         
-        self.backing = backing
+        self.backing = .objectiveC(backing)
         self.parent = parent
         self._portionOfParent = UnitCount(pendingUnitCount.toIntMax())
         self.granularity = granularity
         
         // These handlers are called as a result of KVO notifications sent by the underlying progress object.
         
-        backing.fractionCompletedUpdatedHandler = {
-            self.accessSemaphore.wait()
+        backing.fractionCompletedUpdatedHandler = { [weak self] in
+            guard let sSelf = self else { return }
             
-            self.sendFractionCompletedNotifications(fractionCompleted: self.backing.fractionCompleted, isCompleted: self.backing.isCompleted) {
-                self.accessSemaphore.signal()
+            sSelf.accessSemaphore.wait()
+            
+            sSelf.sendFractionCompletedNotifications(fractionCompleted: backing.fractionCompleted, isCompleted: backing.isCompleted) {
+                sSelf.accessSemaphore.signal()
             }
         }
         
-        backing.descriptionUpdatedHandler = {
-            self.accessSemaphore.wait()
-            defer { self.accessSemaphore.signal() }
+        backing.descriptionUpdatedHandler = { [weak self] in
+            guard let sSelf = self else { return }
             
-            self.sendDescriptionNotifications()
+            sSelf.accessSemaphore.wait()
+            defer { sSelf.accessSemaphore.signal() }
+            
+            sSelf.sendDescriptionNotifications()
         }
         
-        backing.cancellationHandler = {
-            self.accessSemaphore.wait()
-            defer { self.accessSemaphore.signal() }
+        backing.cancellationHandler = { [weak self] in
+            guard let sSelf = self else { return }
             
-            self.sendCancellationNotifications()
+            sSelf.accessSemaphore.wait()
+            defer { sSelf.accessSemaphore.signal() }
+            
+            sSelf.sendCancellationNotifications()
         }
         
         self.parent?.addChild(self, withPendingUnitCount: pendingUnitCount)
@@ -1037,11 +1137,11 @@ public final class CSProgress: CustomDebugStringConvertible {
             super.init(parent: nil, userInfo: nil)
             
             // Directly access the primitive accessors, because this class will only be created while already protected by the semaphore.
-            super.totalUnitCount = progress.backing.totalUnitCount
-            super.completedUnitCount = progress.backing.completedUnitCount
-            super.localizedDescription = progress.backing.localizedDescription
-            super.localizedAdditionalDescription = progress.backing.localizedAdditionalDescription
-            if progress.backing.isCancelled { super.cancel() }
+            super.totalUnitCount = progress._totalUnitCount
+            super.completedUnitCount = progress._completedUnitCount
+            super.localizedDescription = progress._localizedDescription
+            super.localizedAdditionalDescription = progress._localizedAdditionalDescription
+            if progress._isCancelled { super.cancel() }
             
             // Register notifications on the underlying CSProgress, to update our properties.
             
@@ -1102,16 +1202,19 @@ public final class CSProgress: CustomDebugStringConvertible {
         
         // If we're wrapping an NSProgress, return that. Otherwise wrap ourselves in a BridgedNSProgress.
         
-        if let backing = self.backing as? NSProgressBacking {
+        switch self.backing {
+        case let .objectiveC(backing):
             return backing.progress
-        } else if let bridged = self.bridgedNSProgress {
-            return bridged
-        } else {
-            let bridged = BridgedNSProgress(progress: self, queue: queue)
-            
-            self.bridgedNSProgress = bridged
-            
-            return bridged
+        case .swift:
+            if let bridged = self.bridgedNSProgress {
+                return bridged
+            } else {
+                let bridged = BridgedNSProgress(progress: self, queue: queue)
+                
+                self.bridgedNSProgress = bridged
+                
+                return bridged
+            }
         }
     }
     

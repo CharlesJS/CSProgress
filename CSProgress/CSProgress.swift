@@ -10,9 +10,9 @@ import Foundation
 // 'final' is apparently needed to conform to _ObjectiveCBridgeable. It also results in better performance.
 public final class CSProgress: CustomDebugStringConvertible {
     // We allow increments as an atomic operation, for better performance.
-    fileprivate enum UnitCountChangeType {
-        case set(CSProgress.UnitCount)
-        case increment(CSProgress.UnitCount)
+    private enum UnitCountChangeType {
+        case set(UnitCount)
+        case increment(UnitCount)
     }
     
     // By default, we'll update 100 times over the course of our progress. This should provide a decent user experience without compromising too much on performance.
@@ -66,8 +66,8 @@ public final class CSProgress: CustomDebugStringConvertible {
     
     // The backing for a native Swift CSProgress.
     private final class SwiftBacking {
-        private(set) var totalUnitCount: CSProgress.UnitCount
-        private(set) var completedUnitCount: CSProgress.UnitCount = 0
+        private(set) var totalUnitCount: UnitCount
+        private(set) var completedUnitCount: UnitCount = 0
         var isCompleted: Bool { return self.completedUnitCount == self.totalUnitCount }
         
         var fractionCompleted: Double {
@@ -103,8 +103,8 @@ public final class CSProgress: CustomDebugStringConvertible {
         // when this was a protocol and involved vtable dispatch; it may be possible to simplify now without
         // losing too much)
         
-        func set(totalUnitCount: CSProgress.UnitCount?,
-                 completedUnitCount changeType: CSProgress.UnitCountChangeType?,
+        func set(totalUnitCount: UnitCount?,
+                 completedUnitCount changeType: UnitCountChangeType?,
                  setupHandler: @escaping () -> (),
                  completionHandler: @escaping (_ fractionCompleted: Double, _ isCompleted: Bool) -> ()) {
             setupHandler()
@@ -738,7 +738,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     }
     
     // If Objective-C compatibility is not needed, uncomment the following line and delete everything below it.
-    // typealias Backing = SwiftBacking
+    // private typealias Backing = SwiftBacking
     
     // MARK: Objective-C Compatibility Crud
     // Note: Everything below this point exists for Objective-C interoperability. If Objective-C compatibility is not important, feel free to delete everything below.
@@ -892,7 +892,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     }
     
     // The backing for a CSProgress wrapping an NSProgress.
-    fileprivate final class ObjectiveCBacking: NSObject {
+    private final class ObjectiveCBacking: NSObject {
         let progress: Foundation.Progress
         let queue: OperationQueue
         
@@ -944,8 +944,8 @@ public final class CSProgress: CustomDebugStringConvertible {
         }
         
         // Pass through all these properties to the underlying progress object.
-        var totalUnitCount: CSProgress.UnitCount { return self.progress.totalUnitCount }
-        var completedUnitCount: CSProgress.UnitCount { return self.progress.completedUnitCount }
+        var totalUnitCount: UnitCount { return self.progress.totalUnitCount }
+        var completedUnitCount: UnitCount { return self.progress.completedUnitCount }
         var fractionCompleted: Double { return self.progress.fractionCompleted }
         var isCompleted: Bool { return self.completedUnitCount == self.totalUnitCount }
         var localizedDescription: String { return self.progress.localizedDescription }
@@ -953,8 +953,8 @@ public final class CSProgress: CustomDebugStringConvertible {
         var isIndeterminate: Bool { return self.progress.isIndeterminate }
         var isCancelled: Bool { return self.progress.isCancelled }
         
-        func set(totalUnitCount: CSProgress.UnitCount?,
-                 completedUnitCount changeType: CSProgress.UnitCountChangeType?,
+        func set(totalUnitCount: UnitCount?,
+                 completedUnitCount changeType: UnitCountChangeType?,
                  setupHandler: @escaping () -> (),
                  completionHandler: @escaping (_ fractionCompleted: Double, _ isCompleted: Bool) -> ()) {
             // Make our changes on the queue, to avoid jamming up the worker thread with KVO notifications.
@@ -1187,11 +1187,11 @@ public final class CSProgress: CustomDebugStringConvertible {
         }
         
         override var totalUnitCount: Int64 {
-            didSet { self.progress?.totalUnitCount = CSProgress.UnitCount(self.totalUnitCount) }
+            didSet { self.progress?.totalUnitCount = UnitCount(self.totalUnitCount) }
         }
         
         override var completedUnitCount: Int64 {
-            didSet { self.progress?.completedUnitCount = CSProgress.UnitCount(self.completedUnitCount) }
+            didSet { self.progress?.completedUnitCount = UnitCount(self.completedUnitCount) }
         }
         
         override var fractionCompleted: Double { return self.progress?.fractionCompleted ?? 0.0 }

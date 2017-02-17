@@ -171,12 +171,12 @@ CSProgress supports the following features:
 * Uses generics to support all integer types as arguments, rather than only Int64
 * Adds a wrapper struct encapsulating a parent progress object and its pending unit count, which can be passed to child tasks in order to build progress trees explicitly while still enjoying the loose coupling of the implicit composition method
 * Much better performance than NSProgress. On my 2013 Retina MacBook Pro, incrementing each progress object in a tree consisting of a root node and four child nodes from 0 to 1,000,000 each takes:
- * NSProgress with no observers and no autorelease pool: 19.85 seconds (although it bloated the app’s memory size to over 4.5 GB)
- * NSProgress with an autorelease pool: 25.94 seconds
- * NSProgress with a KVO observer and no autorelease pool: 52.91 seconds (also consuming a lot of memory)
- * NSProgress with a KVO observer and an autorelease pool: 58.53 seconds
- * CSProgress with no observers: 1.06 seconds
- * CSProgress with an observer: 1.04 seconds
+ * NSProgress with no observers and no autorelease pool: 18.77 seconds (although it bloated the app’s memory size to over 4.5 GB)
+ * NSProgress with an autorelease pool: 26.64 seconds
+ * NSProgress with a KVO observer and no autorelease pool: 54.72 seconds (also consuming a lot of memory)
+ * NSProgress with a KVO observer and an autorelease pool: 60.93 seconds
+ * CSProgress with no observers: 0.91 seconds
+ * CSProgress with an observer: 0.90 seconds
  
  As you can see, having an observer has no noticeable effect on performance (in this test, the version with an observer actually took slightly less time). As a result, CSProgress performs about twice an order of magnitude better than NSProgress when it is not being observed, and several times that when observers are involved.
  

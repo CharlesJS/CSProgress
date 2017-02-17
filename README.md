@@ -7,15 +7,15 @@ reporting of progress in Mac and iOS applications. The concept it introduces is 
 represent a small part of the work to be done and can be confined to that particular section of the code, reducing the amount of 
 spaghetti needed to represent progress in a complex system.
 
-Unfortunately, the execution is kind of terrible.
+Unfortunately, the execution is terrible.
 
 ### NSProgress’s Performance is Terrible
 
-Unfortunately, the performance of NSProgress is simply *terrible.* This is not a major concern for many Cocoa classes, but the purpose
-of NSProgress, tracking progress for operations that take a long time, naturally lends itself to being used in performance-critical code.
+Unfortunately, the performance of NSProgress is simply *terrible.* While performance is not a major concern for many Cocoa classes, the purpose
+of NSProgress—tracking progress for operations that take a long time—naturally lends itself to being used in performance-critical code.
 The slower NSProgress is, the more likely it is that it will affect running times for operations that are already long-running enough to
 need progress reporting. In Apple’s [“Best Practices in Progress Reporting”](https://developer.apple.com/videos/play/wwdc2015/232/)
-video from 2015, Apple recommends not updating NSProgress in a tight loop, because of the effects that will have on performance.
+video from 2015, Apple recommends not updating NSProgress in a tight loop, because of the effects that will have on performance. Unfortunately, this best-practice effectively results in polluting the back-end with UI code, adversely affecting the separation of concerns. 
 
 There are a number of things that contribute to the sluggishness of NSProgress:
 
@@ -28,9 +28,9 @@ there’s more.
 
 #### KVO
 
-This is the big one. Every an NSProgress object is updated, it posts KVO notifications. KVO is [well known to have terrible performance]
+This is the big one. Every an NSProgress object is updated, it posts KVO notifications. KVO is [well known to have terrible performance characteristics]
 (http://blog.metaobject.com/2014/03/the-siren-call-of-kvo-and-cocoa-bindings.html). And every time you update the change count on an
-NSProgress, object, KVO notifications will be sent not only for that progress object, but also its parent, its grandparent, and so on
+NSProgress object, KVO notifications will be sent not only for that progress object, but also its parent, its grandparent, and so on
 all the way back up to the root of the tree. Furthermore, these notifications are all sent on the current thread, so your worker will
 need to wait for all the notifications to finish before it can continue getting on with what it was doing. This can significantly bog
 things down.
@@ -39,8 +39,7 @@ things down.
 
 NSProgress is thread-safe, which is great! Unfortunately this is implemented using NSLock, a simple wrapper around pthread mutexes
 [which adds a great deal of overhead](http://perpendiculo.us/2009/09/synchronized-nslock-pthread-osspinlock-showdown-done-right/).
-Furthermore, there’s no atomic way to increment the change count. To do so, one has to get the current completedUnitCount, add something
-to it, and then send that back to completedUnitCount’s setter, resulting in the lock being taken twice for one operation.
+Furthermore, there’s no atomic way to increment the change count. To do so, one first has to get the current completedUnitCount, then add something to it, and then finally send that back to completedUnitCount’s setter, resulting in the lock being taken twice for one operation. In addition to being inferior performance-wise, this also introduces a race condition, since something else running on another thread can conceivably change the completedUnitCount property in between the read and the write, causing the unit count to become incorrect.
 
 #### It’s a Memory Hog
 

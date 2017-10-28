@@ -16,7 +16,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     }
     
     // By default, we'll update 100 times over the course of our progress. This should provide a decent user experience without compromising too much on performance.
-    private static let defaultGranularity: Double = 0.01
+    public static let defaultGranularity: Double = 0.01
     
     // Declare our own unit count type instead of hard-coding it to Int64, for future flexibility.
     public typealias UnitCount = Int64
@@ -38,13 +38,13 @@ public final class CSProgress: CustomDebugStringConvertible {
         public let progress: CSProgress
         fileprivate let pendingUnitCount: UnitCount
         
-        public init<Count: Integer>(progress: CSProgress, pendingUnitCount: Count) {
+        public init<Count: BinaryInteger>(progress: CSProgress, pendingUnitCount: Count) {
             self.progress = progress
-            self.pendingUnitCount = UnitCount(pendingUnitCount.toIntMax())
+            self.pendingUnitCount = UnitCount(pendingUnitCount)
         }
         
         /// This creates a child progress, attached to the parent progress with the pending unit count specified when this struct was created.
-        public func makeChild<Count: Integer>(totalUnitCount: Count) -> CSProgress {
+        public func makeChild<Count: BinaryInteger>(totalUnitCount: Count) -> CSProgress {
             return CSProgress(totalUnitCount: totalUnitCount, parent: self.progress, pendingUnitCount: self.pendingUnitCount)
         }
         
@@ -172,7 +172,7 @@ public final class CSProgress: CustomDebugStringConvertible {
      This eliminates notifications that are too small to be noticeable, increasing performance.
      Default value is 0.01.
      */
-    public class func discreteProgress<Count: Integer>(totalUnitCount: Count, granularity: Double = CSProgress.defaultGranularity) -> CSProgress {
+    public class func discreteProgress<Count: BinaryInteger>(totalUnitCount: Count, granularity: Double = CSProgress.defaultGranularity) -> CSProgress {
         return self.init(totalUnitCount: totalUnitCount, parent: nil, pendingUnitCount: 0, granularity: granularity)
     }
     
@@ -189,10 +189,10 @@ public final class CSProgress: CustomDebugStringConvertible {
      This eliminates notifications that are too small to be noticeable, increasing performance.
      Default value is 0.01.
      */
-    public init<Total: Integer, Pending: Integer>(totalUnitCount: Total, parent: CSProgress?, pendingUnitCount: Pending, granularity: Double = CSProgress.defaultGranularity) {
-        self.backing = .swift(SwiftBacking(totalUnitCount: UnitCount(totalUnitCount.toIntMax())))
+    public init<Total: BinaryInteger, Pending: BinaryInteger>(totalUnitCount: Total, parent: CSProgress?, pendingUnitCount: Pending, granularity: Double = CSProgress.defaultGranularity) {
+        self.backing = .swift(SwiftBacking(totalUnitCount: UnitCount(totalUnitCount)))
         self.parent = parent
-        self._portionOfParent = UnitCount(totalUnitCount.toIntMax())
+        self._portionOfParent = UnitCount(totalUnitCount)
         self.granularity = granularity
         
         self.parent?.addChild(self, withPendingUnitCount: pendingUnitCount)
@@ -234,8 +234,8 @@ public final class CSProgress: CustomDebugStringConvertible {
     }
     
     /// Perform increment as one atomic operation, eliminating an unnecessary semaphore wait and increasing performance.
-    public func incrementCompletedUnitCount<Count: Integer>(by interval: Count) {
-        self.updateUnitCount(totalUnitCount: nil, completedUnitCount: .increment(UnitCount(interval.toIntMax())))
+    public func incrementCompletedUnitCount<Count: BinaryInteger>(by interval: Count) {
+        self.updateUnitCount(totalUnitCount: nil, completedUnitCount: .increment(UnitCount(interval)))
     }
     
     // The portion of the parent's unit count represented by the progress object.
@@ -276,7 +276,11 @@ public final class CSProgress: CustomDebugStringConvertible {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
-        if let parent = self.parent, parent.backing.isCancelled { return true }
+        return self._isCancelled
+    }
+    
+    private var _isCancelled: Bool {
+        if let parent = self.parent, parent._isCancelled { return true }
         
         return self.backing.isCancelled
     }
@@ -351,8 +355,8 @@ public final class CSProgress: CustomDebugStringConvertible {
      Create a reference to a parent progress, encapsulating both it and its pending unit count.
      This allows the child function to attach a new progress without knowing details about the parent progress and its unit count.
      */
-    public func pass<Count: Integer>(pendingUnitCount: Count) -> ParentReference {
-        return ParentReference(progress: self, pendingUnitCount: UnitCount(pendingUnitCount.toIntMax()))
+    public func pass<Count: BinaryInteger>(pendingUnitCount: Count) -> ParentReference {
+        return ParentReference(progress: self, pendingUnitCount: UnitCount(pendingUnitCount))
     }
     
     /**
@@ -362,13 +366,13 @@ public final class CSProgress: CustomDebugStringConvertible {
      
      - parameter pendingUnitCount: The number of units of work to be carried out by the new child.
      */
-    public func addChild<Count: Integer>(_ child: CSProgress, withPendingUnitCount pendingUnitCount: Count) {
+    public func addChild<Count: BinaryInteger>(_ child: CSProgress, withPendingUnitCount pendingUnitCount: Count) {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
         // Progress objects in the same family tree share a semaphore to keep their values synced and to prevent shenanigans
         // (particularly when calculating fractionCompleted values).
-        self.backing.addChild(child, pendingUnitCount: UnitCount(pendingUnitCount.toIntMax()))
+        self.backing.addChild(child, pendingUnitCount: UnitCount(pendingUnitCount))
         child.accessSemaphore = self.accessSemaphore
     }
     
@@ -488,7 +492,7 @@ public final class CSProgress: CustomDebugStringConvertible {
      
      - parameter identifier: The identifier previously returned by addFractionCompletedNotification() for the notification you wish to remove.
      */
-    @discardableResult public func removeFractionCompletedNotification(identifier: Any) {
+    public func removeFractionCompletedNotification(identifier: Any) {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
@@ -569,7 +573,7 @@ public final class CSProgress: CustomDebugStringConvertible {
             parent.backing.removeChild(self)
             self.parent = nil
             
-            parent.backing.set(totalUnitCount: nil, completedUnitCount: .increment(self._portionOfParent), setupHandler: {}) { _ in
+            parent.backing.set(totalUnitCount: nil, completedUnitCount: .increment(self._portionOfParent), setupHandler: {}) { _, _ in
                 self.sendFractionCompletedNotifications(fractionCompleted: fractionCompleted, isCompleted: isCompleted) {
                     parent.sendFractionCompletedNotifications(fractionCompleted: parent.backing.fractionCompleted, isCompleted: parent.backing.isCompleted, completionHandler: completionHandler)
                 }
@@ -678,7 +682,7 @@ public final class CSProgress: CustomDebugStringConvertible {
      The queue's maxConcurrentOperationCount should be set to something low to prevent excessive threads from being created.
      This parameter defaults to the main operation queue.
      */
-    public convenience init<Count: Integer>(totalUnitCount: Count, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) {
+    public convenience init<Count: BinaryInteger>(totalUnitCount: Count, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) {
         if let parentRef = CSProgress._current {
             let parent = parentRef.progress
             let pendingUnitCount = parentRef.pendingUnitCount
@@ -712,10 +716,24 @@ public final class CSProgress: CustomDebugStringConvertible {
      The queue's maxConcurrentOperationCount should be set to something low to prevent excessive threads from being created.
      This parameter defaults to the main operation queue.
      */
-    public func becomeCurrent<Count: Integer>(withPendingUnitCount unitCount: Count, queue: OperationQueue = .main) {
-        CSProgress._current = ParentReference(progress: self, pendingUnitCount: UnitCount(unitCount.toIntMax()))
+    public func becomeCurrent<Count: BinaryInteger>(withPendingUnitCount unitCount: Count, queue: OperationQueue = .main) {
+        CSProgress._current = ParentReference(progress: self, pendingUnitCount: UnitCount(unitCount))
         
-        self.bridgeToNSProgress(queue: queue).becomeCurrent(withPendingUnitCount: Int64(unitCount.toIntMax()))
+        let ns: Foundation.Progress = {
+            switch self.backing {
+            case .swift:
+                let ns = Foundation.Progress(totalUnitCount: Int64(unitCount))
+                let wrapper = CSProgress(wrappedNSProgress: ns, parent: self, pendingUnitCount: unitCount, queue: queue)
+                
+                self.addChild(wrapper, withPendingUnitCount: unitCount)
+                
+                return ns
+            case .objectiveC:
+                return self.bridgeToNSProgress()
+            }
+        }()
+        
+        ns.becomeCurrent(withPendingUnitCount: Int64(unitCount))
     }
     
     /**
@@ -729,10 +747,19 @@ public final class CSProgress: CustomDebugStringConvertible {
         }
         
         if let currentNS = Foundation.Progress.current() {
-            let bridged = self.bridgeToNSProgress()
-            
-            if bridged === currentNS {
-                bridged.resignCurrent()
+            switch self.backing {
+            case let .swift(backing):
+                self.accessSemaphore.wait()
+                defer { self.accessSemaphore.signal() }
+                
+                if backing.children.contains(where: { $0._bridgeToNSProgress() === currentNS }) {
+                    currentNS.resignCurrent()
+                }
+            case let .objectiveC(backing):
+                self.accessSemaphore.wait()
+                defer { self.accessSemaphore.signal }
+                
+                backing.progress.resignCurrent()
             }
         }
     }
@@ -1037,44 +1064,46 @@ public final class CSProgress: CustomDebugStringConvertible {
         
         var debugDescriptionSuffix: String { return "(wrapping: 0x\(String(ObjectIdentifier(self.progress).hashValue, radix: 16)))" }
         
-        private let interestingKeyPaths = ["fractionCompleted", "indeterminate", "cancelled", "localizedDescription", "localizedAdditionalDescription"]
-        
-        private var kvoContext = 0
+        private var kvoObservations: [NSKeyValueObservation] = []
         
         private func startWatching() {
-            for eachKeyPath in self.interestingKeyPaths {
-                self.progress.addObserver(self, forKeyPath: eachKeyPath, options: [], context: &self.kvoContext)
-            }
+            // For each observation, if this change was caused by something we did ourselves,
+            // ignore the notification or we'll just keep going back and forth forever.
+            
+            self.kvoObservations.append(self.progress.observe(\.fractionCompleted) { [weak self] _, _ in
+                if let s = self, !s.isUpdating, let handler = s.fractionCompletedUpdatedHandler {
+                    s.queue.addOperation(handler)
+                }
+            })
+            
+            self.kvoObservations.append(self.progress.observe(\.isIndeterminate) { [weak self] _, _ in
+                if let s = self, !s.isUpdating, let handler = s.indeterminateHandler {
+                    s.queue.addOperation(handler)
+                }
+            })
+            
+            self.kvoObservations.append(self.progress.observe(\.isCancelled) { [weak self] _, _ in
+                if let s = self, !s.isUpdating, let handler = s.cancellationHandler {
+                    s.queue.addOperation(handler)
+                }
+            })
+            
+            self.kvoObservations.append(self.progress.observe(\.localizedDescription) { [weak self] _, _ in
+                if let s = self, !s.isUpdating, let handler = s.descriptionUpdatedHandler {
+                    s.queue.addOperation(handler)
+                }
+            })
+            
+            self.kvoObservations.append(self.progress.observe(\.localizedAdditionalDescription) { [weak self] _, _ in
+                if let s = self, !s.isUpdating, let handler = s.descriptionUpdatedHandler {
+                    s.queue.addOperation(handler)
+                }
+            })
         }
         
         private func stopWatching() {
-            for eachKeyPath in self.interestingKeyPaths {
-                self.progress.removeObserver(self, forKeyPath: eachKeyPath, context: &self.kvoContext)
-            }
-        }
-        
-        override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
-            if context == &self.kvoContext {
-                guard let keyPath = keyPath else { return }
-                
-                // If this change was caused by something we did ourselves, ignore the notification or we'll just keep going back and forth forever.
-                if self.isUpdating { return }
-                
-                switch keyPath {
-                case "fractionCompleted":
-                    self.fractionCompletedUpdatedHandler.map { queue.addOperation($0) }
-                case "indeterminate":
-                    self.indeterminateHandler.map { queue.addOperation($0) }
-                case "cancelled":
-                    self.cancellationHandler.map { queue.addOperation($0) }
-                case "localizedDescription", "localizedAdditionalDescription":
-                    self.descriptionUpdatedHandler.map { queue.addOperation($0) }
-                default:
-                    break
-                }
-            } else {
-                super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
-            }
+            self.kvoObservations.forEach { $0.invalidate() }
+            self.kvoObservations = []
         }
     }
     
@@ -1102,12 +1131,12 @@ public final class CSProgress: CustomDebugStringConvertible {
      The queue's maxConcurrentOperationCount should be set to something low to prevent excessive threads from being created.
      This parameter defaults to the main operation queue.
      */
-    private init<Count: Integer>(wrappedNSProgress: Foundation.Progress, parent: CSProgress?, pendingUnitCount: Count, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) {
+    private init<Count: BinaryInteger>(wrappedNSProgress: Foundation.Progress, parent: CSProgress?, pendingUnitCount: Count, granularity: Double = CSProgress.defaultGranularity, queue: OperationQueue = .main) {
         let backing = ObjectiveCBacking(progress: wrappedNSProgress, queue: queue)
         
         self.backing = .objectiveC(backing)
         self.parent = parent
-        self._portionOfParent = UnitCount(pendingUnitCount.toIntMax())
+        self._portionOfParent = UnitCount(pendingUnitCount)
         self.granularity = granularity
         
         // These handlers are called as a result of KVO notifications sent by the underlying progress object.
@@ -1220,6 +1249,10 @@ public final class CSProgress: CustomDebugStringConvertible {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
+        return self._bridgeToNSProgress(queue: queue)
+    }
+    
+    private func _bridgeToNSProgress(queue: OperationQueue = .main) -> Foundation.Progress {
         // If we're wrapping an NSProgress, return that. Otherwise wrap ourselves in a BridgedNSProgress.
         
         switch self.backing {

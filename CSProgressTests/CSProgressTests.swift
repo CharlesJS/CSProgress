@@ -409,19 +409,19 @@ class CSProgressTests: XCTestCase {
         
         let masterProgress = CSProgress.discreteProgress(totalUnitCount: masterCount, granularity: granularity)
         
-        masterProgress.becomeCurrent(withPendingUnitCount: subAPortion, queue: queue)
+        masterProgress.becomeCurrent(withPendingUnitCount: subAPortion)
         let subProgressA = CSProgress(totalUnitCount: subACount, granularity: granularity)
         masterProgress.resignCurrent()
         
-        masterProgress.becomeCurrent(withPendingUnitCount: subBPortion, queue: queue)
+        masterProgress.becomeCurrent(withPendingUnitCount: subBPortion)
         let subProgressB = CSProgress(totalUnitCount: subBCount, granularity: granularity)
         masterProgress.resignCurrent()
         
-        masterProgress.becomeCurrent(withPendingUnitCount: subCPortion, queue: queue)
+        masterProgress.becomeCurrent(withPendingUnitCount: subCPortion)
         let subProgressC = CSProgress(totalUnitCount: subCCount, granularity: granularity)
         masterProgress.resignCurrent()
         
-        masterProgress.becomeCurrent(withPendingUnitCount: subDPortion, queue: queue)
+        masterProgress.becomeCurrent(withPendingUnitCount: subDPortion)
         let subProgressD = CSProgress(totalUnitCount: subDCount, granularity: granularity)
         masterProgress.resignCurrent()
         
@@ -549,7 +549,7 @@ class CSProgressTests: XCTestCase {
 
 extension Collection {
     func shuffled() -> [Self.Iterator.Element] {
-        let indexes = (0..<Int(self.distance(from: self.startIndex, to: self.endIndex).toIntMax())).map { _ in arc4random() }
+        let indexes = (0..<Int(self.distance(from: self.startIndex, to: self.endIndex))).map { _ in arc4random() }
         return zip(self, indexes).sorted { $0.1 > $1.1 }.map { $0.0 }
     }
 }

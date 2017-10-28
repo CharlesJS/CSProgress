@@ -2,8 +2,7 @@
 
 ## Introduction
 
-NSProgress (renamed to Progress in Swift 3) is a Foundation class introduced in Mac OS X 10.9 (“Mavericks”), intended to simplify the
-reporting of progress in Mac and iOS applications. The concept it introduces is great, creating a tree of progress objects, all of which
+NSProgress (renamed to Progress in Swift 3) is a Foundation class introduced in Mac OS X 10.9 (“Mavericks”), intended to simplify progress reporting in Mac and iOS applications. The concept it introduces is great, creating a tree of progress objects, all of which
 represent a small part of the work to be done and can be confined to that particular section of the code, reducing the amount of 
 spaghetti needed to represent progress in a complex system.
 
@@ -14,7 +13,7 @@ Unfortunately, the execution is terrible.
 Unfortunately, the performance of NSProgress is simply *terrible.* While performance is not a major concern for many Cocoa classes, the purpose
 of NSProgress—tracking progress for operations that take a long time—naturally lends itself to being used in performance-critical code.
 The slower NSProgress is, the more likely it is that it will affect running times for operations that are already long-running enough to
-need progress reporting. In Apple’s [“Best Practices in Progress Reporting”](https://developer.apple.com/videos/play/wwdc2015/232/)
+need progress reporting. In Apple’s ["Best Practices in Progress Reporting"](https://developer.apple.com/videos/play/wwdc2015/232/)
 video from 2015, Apple recommends not updating NSProgress in a tight loop, because of the effects that will have on performance. Unfortunately, this best-practice effectively results in polluting the back-end with UI code, adversely affecting the separation of concerns. 
 
 There are a number of things that contribute to the sluggishness of NSProgress:

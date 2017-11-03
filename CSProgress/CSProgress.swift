@@ -755,11 +755,8 @@ public final class CSProgress: CustomDebugStringConvertible {
                 if backing.children.contains(where: { $0._bridgeToNSProgress() === currentNS }) {
                     currentNS.resignCurrent()
                 }
-            case let .objectiveC(backing):
-                self.accessSemaphore.wait()
-                defer { self.accessSemaphore.signal }
-                
-                backing.progress.resignCurrent()
+            case .objectiveC:
+                self.bridgeToNSProgress().resignCurrent()
             }
         }
     }
@@ -1071,32 +1068,32 @@ public final class CSProgress: CustomDebugStringConvertible {
             // ignore the notification or we'll just keep going back and forth forever.
             
             self.kvoObservations.append(self.progress.observe(\.fractionCompleted) { [weak self] _, _ in
-                if let s = self, !s.isUpdating, let handler = s.fractionCompletedUpdatedHandler {
-                    s.queue.addOperation(handler)
+                if let sSelf = self, !sSelf.isUpdating, let handler = sSelf.fractionCompletedUpdatedHandler {
+                    sSelf.queue.addOperation(handler)
                 }
             })
             
             self.kvoObservations.append(self.progress.observe(\.isIndeterminate) { [weak self] _, _ in
-                if let s = self, !s.isUpdating, let handler = s.indeterminateHandler {
-                    s.queue.addOperation(handler)
+                if let sSelf = self, !sSelf.isUpdating, let handler = sSelf.indeterminateHandler {
+                    sSelf.queue.addOperation(handler)
                 }
             })
             
             self.kvoObservations.append(self.progress.observe(\.isCancelled) { [weak self] _, _ in
-                if let s = self, !s.isUpdating, let handler = s.cancellationHandler {
-                    s.queue.addOperation(handler)
+                if let sSelf = self, !sSelf.isUpdating, let handler = sSelf.cancellationHandler {
+                    sSelf.queue.addOperation(handler)
                 }
             })
             
             self.kvoObservations.append(self.progress.observe(\.localizedDescription) { [weak self] _, _ in
-                if let s = self, !s.isUpdating, let handler = s.descriptionUpdatedHandler {
-                    s.queue.addOperation(handler)
+                if let sSelf = self, !sSelf.isUpdating, let handler = sSelf.descriptionUpdatedHandler {
+                    sSelf.queue.addOperation(handler)
                 }
             })
             
             self.kvoObservations.append(self.progress.observe(\.localizedAdditionalDescription) { [weak self] _, _ in
-                if let s = self, !s.isUpdating, let handler = s.descriptionUpdatedHandler {
-                    s.queue.addOperation(handler)
+                if let sSelf = self, !sSelf.isUpdating, let handler = sSelf.descriptionUpdatedHandler {
+                    sSelf.queue.addOperation(handler)
                 }
             })
         }
@@ -1141,12 +1138,12 @@ public final class CSProgress: CustomDebugStringConvertible {
         
         // These handlers are called as a result of KVO notifications sent by the underlying progress object.
         
-        backing.fractionCompletedUpdatedHandler = { [weak self] in
-            guard let sSelf = self else { return }
+        backing.fractionCompletedUpdatedHandler = { [weak self, weak backing] in
+            guard let sSelf = self, let sBacking = backing else { return }
             
             sSelf.accessSemaphore.wait()
             
-            sSelf.sendFractionCompletedNotifications(fractionCompleted: backing.fractionCompleted, isCompleted: backing.isCompleted) {
+            sSelf.sendFractionCompletedNotifications(fractionCompleted: sBacking.fractionCompleted, isCompleted: sBacking.isCompleted) {
                 sSelf.accessSemaphore.signal()
             }
         }

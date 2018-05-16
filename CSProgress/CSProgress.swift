@@ -338,6 +338,11 @@ public final class CSProgress: CustomDebugStringConvertible {
         
         let completionHandler = {
             self.sendDescriptionNotifications()
+            
+            if cancel {
+                self.sendCancellationNotifications()
+            }
+            
             self.accessSemaphore.signal()
         }
         

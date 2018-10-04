@@ -27,8 +27,7 @@ there’s more.
 
 #### KVO
 
-This is the big one. Every an NSProgress object is updated, it posts KVO notifications. KVO is [well known to have terrible performance characteristics]
-(http://blog.metaobject.com/2014/03/the-siren-call-of-kvo-and-cocoa-bindings.html). And every time you update the change count on an
+This is the big one. Every an NSProgress object is updated, it posts KVO notifications. KVO is [well known to have terrible performance characteristics](http://blog.metaobject.com/2014/03/the-siren-call-of-kvo-and-cocoa-bindings.html). And every time you update the change count on an
 NSProgress object, KVO notifications will be sent not only for that progress object, but also its parent, its grandparent, and so on
 all the way back up to the root of the tree. Furthermore, these notifications are all sent on the current thread, so your worker will
 need to wait for all the notifications to finish before it can continue getting on with what it was doing. This can significantly bog

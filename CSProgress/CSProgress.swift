@@ -2,7 +2,7 @@
 //  CSProgress.swift
 //
 //  Created by Charles Srstka on 1/10/16.
-//  Copyright © 2016-2017 Charles Srstka. All rights reserved.
+//  Copyright © 2016-2020 Charles Srstka. All rights reserved.
 //
 
 import Foundation
@@ -36,7 +36,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     /// Create one of these by calling .pass() on the parent progress.
     public struct ParentReference {
         public let progress: CSProgress
-        fileprivate let pendingUnitCount: UnitCount
+        public let pendingUnitCount: UnitCount
         
         public init<Count: BinaryInteger>(progress: CSProgress, pendingUnitCount: Count) {
             self.progress = progress
@@ -944,7 +944,7 @@ public final class CSProgress: CustomDebugStringConvertible {
                 let ptr = $0.bindMemory(to: Bool.self, capacity: 1)
                 
                 ptr.deinitialize(count: 1)
-                ptr.deallocate(capacity: 1)
+                ptr.deallocate()
             }
             
             self.startWatching()
@@ -1095,7 +1095,7 @@ public final class CSProgress: CustomDebugStringConvertible {
                     sSelf.queue.addOperation(handler)
                 }
             })
-            
+                
             self.kvoObservations.append(self.progress.observe(\.localizedAdditionalDescription) { [weak self] _, _ in
                 if let sSelf = self, !sSelf.isUpdating, let handler = sSelf.descriptionUpdatedHandler {
                     sSelf.queue.addOperation(handler)

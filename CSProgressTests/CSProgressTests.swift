@@ -3,7 +3,7 @@
 //  CSProgress
 //
 //  Created by Charles Srstka on 1/13/17.
-//  Copyright © 2017 Charles Srstka. All rights reserved.
+//  Copyright © 2017-2020 Charles Srstka. All rights reserved.
 //
 
 import XCTest

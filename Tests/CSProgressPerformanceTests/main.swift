@@ -8,4 +8,6 @@
 
 import Foundation
 
-TimeCSProgresses()
+if #available(macOS 10.11, *) {
+    TimeCSProgresses()
+}

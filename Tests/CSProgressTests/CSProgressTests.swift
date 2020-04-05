@@ -27,6 +27,7 @@ class CSProgressTests: XCTestCase {
     
     private let numOfEach = 10000
     
+    @available(macOS 10.10, *)
     private func testCSProgresses(progressPair: ProgressPair, changes: [() -> ()], queue maybeQueue: OperationQueue? = nil) {
         let queue = maybeQueue ?? OperationQueue()
         queue.maxConcurrentOperationCount = 1
@@ -62,6 +63,7 @@ class CSProgressTests: XCTestCase {
         }
     }
     
+    @available(macOS 10.10, *)
     private func testCSProgresses(masterProgress: ProgressPair, childProgresses: [ProgressPair], queue: OperationQueue? = nil) {
         let changes = ([masterProgress] + childProgresses).flatMap { eachProgressPair in
             return (0..<self.numOfEach).map { _ in
@@ -82,6 +84,7 @@ class CSProgressTests: XCTestCase {
         self.testCSProgresses(progressPair: masterProgress, changes: changes, queue: queue)
     }
     
+    @available(macOS 10.10, *)
     private func testNSProgresses(masterProgress: NSProgressPair, childProgresses: [NSProgressPair], queue: OperationQueue? = nil) {
         let changes = ([masterProgress] + childProgresses).flatMap { eachProgressPair in
             return (0..<self.numOfEach).map { _ in
@@ -115,6 +118,7 @@ class CSProgressTests: XCTestCase {
         }
     }
     
+    @available(macOS 10.10, *)
     private func testCSProgressWithNSProgressChildren(masterProgress: ProgressPair, childProgresses: [NSProgressPair], queue: OperationQueue? = nil) {
         let changes = (0..<self.numOfEach).map { _ in
             return {
@@ -151,6 +155,7 @@ class CSProgressTests: XCTestCase {
         self.testCSProgresses(progressPair: masterProgress, changes: (changes + childChanges).shuffled() + childLastChanges + [lastChange], queue: queue)
     }
     
+    @available(macOS 10.10, *)
     private func testNSProgressWithCSProgressChildren(masterProgress: NSProgressPair, childProgresses: [ProgressPair], queue: OperationQueue) {
         class KVOWatcher: NSObject {
             private var kvoContext = 0
@@ -215,6 +220,7 @@ class CSProgressTests: XCTestCase {
         _ = kvoWatcher.self
     }
     
+    @available(macOS 10.12, *)
     func testCSProgress() {
         let granularity = CSProgressTests.granularity
         
@@ -252,6 +258,7 @@ class CSProgressTests: XCTestCase {
         self.testCSProgresses(masterProgress: masterProgressPair, childProgresses: childProgressPairs)
     }
     
+    @available(macOS 10.12, *)
     func testCSProgressesBackedByNSProgresses() {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
@@ -300,6 +307,7 @@ class CSProgressTests: XCTestCase {
         self.testCSProgresses(masterProgress: masterProgressPair, childProgresses: childProgressPairs, queue: queue)
     }
     
+    @available(macOS 10.12, *)
     func testNSProgressesBackedByCSProgresses() {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
@@ -348,6 +356,7 @@ class CSProgressTests: XCTestCase {
         self.testNSProgresses(masterProgress: masterProgressPair, childProgresses: childProgressPairs, queue: queue)
     }
     
+    @available(macOS 10.12, *)
     func testCSProgressesRootedByNSProgress() {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
@@ -391,6 +400,7 @@ class CSProgressTests: XCTestCase {
         self.testNSProgressWithCSProgressChildren(masterProgress: masterProgressPair, childProgresses: childProgressPairs, queue: queue)
     }
     
+    @available(macOS 10.12, *)
     func testImplicitCSProgress() {
         let queue = OperationQueue()
         
@@ -442,6 +452,7 @@ class CSProgressTests: XCTestCase {
         self.testCSProgresses(masterProgress: masterProgressPair, childProgresses: childProgressPairs, queue: queue)
     }
     
+    @available(macOS 10.11, *)
     func testImplicitNSProgressesRootedByCSProgress() {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
@@ -494,6 +505,7 @@ class CSProgressTests: XCTestCase {
         self.testCSProgressWithNSProgressChildren(masterProgress: masterProgressPair, childProgresses: childProgressPairs, queue: queue)
     }
     
+    @available(macOS 10.11, *)
     func testImplicitCSProgressesRootedByNSProgress() {
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1

@@ -11,6 +11,7 @@ import CSProgress
 private let granularity = 0.01
 private let numOfEach = 1000000
 
+@available(macOS 10.11, *)
 func TimeCSProgresses() {
     TimeNSProgresses()
     TimeNSProgressesWithAutoreleasePool()
@@ -56,6 +57,7 @@ private class KVOWatcher: NSObject {
     }
 }
 
+@available(macOS 10.11, *)
 private func TimeNSProgresses() {
     autoreleasepool {
         let masterProgress = Foundation.Progress.discreteProgress(totalUnitCount: Int64(numOfEach) * 5)
@@ -74,6 +76,7 @@ private func TimeNSProgresses() {
     }
 }
 
+@available(macOS 10.11, *)
 private func TimeNSProgressesWithAutoreleasePool() {
     let masterProgress = Foundation.Progress.discreteProgress(totalUnitCount: Int64(numOfEach) * 5)
     let subProgressA = Foundation.Progress(totalUnitCount: Int64(numOfEach), parent: masterProgress, pendingUnitCount: Int64(numOfEach))
@@ -92,6 +95,7 @@ private func TimeNSProgressesWithAutoreleasePool() {
     }
 }
 
+@available(macOS 10.11, *)
 private func TimeNSProgressesWithObserver() {
     autoreleasepool {
         let masterProgress = Foundation.Progress.discreteProgress(totalUnitCount: Int64(numOfEach) * 5)
@@ -114,6 +118,7 @@ private func TimeNSProgressesWithObserver() {
     }
 }
 
+@available(macOS 10.11, *)
 private func TimeNSProgressesWithObserverAndAutoreleasePool() {
     let masterProgress = Foundation.Progress.discreteProgress(totalUnitCount: Int64(numOfEach) * 5)
     let subProgressA = Foundation.Progress(totalUnitCount: Int64(numOfEach), parent: masterProgress, pendingUnitCount: Int64(numOfEach))
@@ -184,6 +189,7 @@ private func TimePureCSProgressesWithObserver() {
     queue.waitUntilAllOperationsAreFinished()
 }
 
+@available(macOS 10.11, *)
 private func TimeCSProgressesRootedWithObservingNSProgress() {
     let queue = OperationQueue()
     queue.maxConcurrentOperationCount = 1

@@ -382,7 +382,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     }
     
     // Remove a progress object from our progress tree.
-    func removeChild(_ child: CSProgress) {
+    public func removeChild(_ child: CSProgress) {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         

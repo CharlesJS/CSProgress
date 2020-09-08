@@ -627,10 +627,18 @@ public final class CSProgress: CustomDebugStringConvertible {
     }
     
     private var _debugDescription: String {
-        var desc = "<\(String(describing: type(of: self))) 0x\(String(ObjectIdentifier(self).hashValue, radix: 16)))>"
+        let address = UInt(bitPattern: ObjectIdentifier(self).hashValue)
+        let parentAddress = self.parent.map { UInt(bitPattern: ObjectIdentifier($0).hashValue) }
         
-        desc += " : Parent: " + (self.parent.map { "0x\(String(ObjectIdentifier($0).hashValue, radix: 16))" } ?? "nil")
-        desc += " / Fraction completed: \(self.backing.fractionCompleted) / Completed: \(self.backing.completedUnitCount) of \(self.backing.totalUnitCount)"
+        var desc = "<\(String(describing: type(of: self))) 0x\(String(address, radix: 16)))>"
+        
+        desc += " : Parent: " + (parentAddress.map { "0x\(String($0, radix: 16))" } ?? "nil")
+        desc += " / Fraction completed: \(self.backing.fractionCompleted)"
+        desc += " / Completed: \(self.backing.completedUnitCount) of \(self.backing.totalUnitCount)"
+        
+        if self.parent != nil {
+            desc += " (\(self._portionOfParent) of parent)"
+        }
         
         desc += " \(self.backing.debugDescriptionSuffix)"
         
@@ -1064,7 +1072,11 @@ public final class CSProgress: CustomDebugStringConvertible {
         var descriptionUpdatedHandler: (() -> ())?
         var cancellationHandler: (() -> ())?
         
-        var debugDescriptionSuffix: String { return "(wrapping: 0x\(String(ObjectIdentifier(self.progress).hashValue, radix: 16)))" }
+        var debugDescriptionSuffix: String {
+            let address = UInt(bitPattern: ObjectIdentifier(self.progress).hashValue)
+            
+            return "(wrapping: 0x\(String(address, radix: 16)))"
+        }
         
         private var kvoObservations: [NSKeyValueObservation] = []
         

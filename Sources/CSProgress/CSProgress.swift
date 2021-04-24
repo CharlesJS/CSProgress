@@ -382,7 +382,7 @@ public final class CSProgress: CustomDebugStringConvertible {
     }
     
     // Remove a progress object from our progress tree.
-    private func removeChild(_ child: CSProgress) {
+    public func removeChild(_ child: CSProgress) {
         self.accessSemaphore.wait()
         defer { self.accessSemaphore.signal() }
         
@@ -583,7 +583,7 @@ public final class CSProgress: CustomDebugStringConvertible {
                     parent.sendFractionCompletedNotifications(fractionCompleted: parent.backing.fractionCompleted, isCompleted: parent.backing.isCompleted, completionHandler: completionHandler)
                 }
             }
-        } else if abs(fractionCompleted - lastNotifiedFractionCompleted) >= self.granularity {
+        } else if abs(fractionCompleted - lastNotifiedFractionCompleted) >= self.granularity || fractionCompleted == 1.0 || fractionCompleted == 0.0 {
             let completedUnitCount = self.backing.completedUnitCount
             let totalUnitCount = self.backing.totalUnitCount
             

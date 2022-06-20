@@ -1,7 +1,14 @@
 // Based on the unit tests for `Progress` in the `swift-corelibs-foundation` project, found here:
 // https://github.com/apple/swift-corelibs-foundation/blob/main/Tests/Foundation/Tests/TestProgress.swift
 //
-// Some changes have been made to reflect intentional design differences between `Progress` and `CSProgress`.
+// Original code Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
+// Original code Licensed under Apache License v2.0 with Runtime Library Exception
+//
+// See http://swift.org/LICENSE.txt for license information
+// See http://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
+//
+// Changes have been made to use `CSProgress` instead of `Progress`, and to reflect intentional design differences from
+// the original.
 
 import XCTest
 import Dispatch

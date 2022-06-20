@@ -71,15 +71,15 @@ public final class CSProgress: CustomDebugStringConvertible {
         var isCompleted: Bool { return self.completedUnitCount == self.totalUnitCount }
         
         var fractionCompleted: Double {
-            if self.completedUnitCount >= self.totalUnitCount {
+            if self.completedUnitCount >= self.totalUnitCount && self.totalUnitCount >= 0 && self.completedUnitCount > 0 {
                 return 1.0
             }
             
-            if self.totalUnitCount == 0 {
+            if self.totalUnitCount <= 0 {
                 return 0.0
             }
             
-            let myPortion = Double(self.completedUnitCount)
+            let myPortion = Double(max(self.completedUnitCount, 0))
             let childrenPortion = self.children.reduce(0) { $0 + $1.backing.fractionCompleted * Double($1._portionOfParent) }
             
             return (myPortion + childrenPortion) / Double(self.totalUnitCount)
@@ -88,7 +88,12 @@ public final class CSProgress: CustomDebugStringConvertible {
         private(set) var localizedDescription: String = ""
         private(set) var localizedAdditionalDescription: String = ""
         
-        var isIndeterminate: Bool { return self.totalUnitCount == 0 && self.completedUnitCount == 0 }
+        var isIndeterminate: Bool {
+            self.totalUnitCount < 0 ||
+            self.completedUnitCount < 0 ||
+            self.totalUnitCount == 0 && self.completedUnitCount == 0
+        }
+
         private(set) var isCancelled = false
         
         private(set) var children: [CSProgress] = []
@@ -206,6 +211,13 @@ public final class CSProgress: CustomDebugStringConvertible {
     
     // The parent progress object.
     private weak var parent: CSProgress?
+
+    public var isFinished: Bool {
+        self.accessSemaphore.wait()
+        defer { self.accessSemaphore.signal() }
+
+        return self.backing.isCompleted
+    }
     
     /// The total number of units of work to be carried out.
     public var totalUnitCount: UnitCount {
@@ -378,6 +390,7 @@ public final class CSProgress: CustomDebugStringConvertible {
         // Progress objects in the same family tree share a semaphore to keep their values synced and to prevent shenanigans
         // (particularly when calculating fractionCompleted values).
         self.backing.addChild(child, pendingUnitCount: UnitCount(pendingUnitCount))
+        child.parent = self
         child.accessSemaphore = self.accessSemaphore
     }
     
@@ -415,9 +428,13 @@ public final class CSProgress: CustomDebugStringConvertible {
     
     private func _addCancellationNotification(onQueue queue: OperationQueue, notification: @escaping CancellationNotification) -> Any {
         let uuid = UUID()
-        
+
         self.cancellationNotifications[uuid] = CancellationNotificationWrapper(notification: notification, queue: queue)
-        
+
+        if self._isCancelled {
+            self.sendCancellationNotifications()
+        }
+
         return uuid
     }
     
@@ -765,8 +782,12 @@ public final class CSProgress: CustomDebugStringConvertible {
                 self.accessSemaphore.wait()
                 defer { self.accessSemaphore.signal() }
                 
-                if backing.children.contains(where: { $0._bridgeToNSProgress() === currentNS }) {
+                if let bridgedNS = backing.children.first(where: { $0._bridgeToNSProgress() === currentNS }) {
                     currentNS.resignCurrent()
+
+                    if backing.children.count > 1 {
+                        self.backing.removeChild(bridgedNS)
+                    }
                 }
             case .objectiveC:
                 self.bridgeToNSProgress().resignCurrent()

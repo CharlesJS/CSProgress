@@ -10,6 +10,6 @@ import CSProgress
 
 extension Progress: OpaqueProgressType {
     public func addChild(_ child: CSProgress, withPendingUnitCount pendingUnitCount: some BinaryInteger) async {
-        await child.addToParent(self, pendingUnitCount: pendingUnitCount)
+        await child.addToParent(self, withPendingUnitCount: pendingUnitCount)
     }
 }

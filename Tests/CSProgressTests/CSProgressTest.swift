@@ -82,6 +82,84 @@ final class CSProgressTest: XCTestCase {
         await XCTAssertEqualAsync(await parent.backing.children.count, 0)
     }
 
+    func testGranularity() async throws {
+        actor Storage {
+            private(set) var counts: [ProgressPortion.UnitCount] = []
+            private(set) var finished = false
+
+            func addCount(_ count: ProgressPortion.UnitCount) {
+                self.counts.append(count)
+            }
+
+            func finish() {
+                self.finished = true
+            }
+
+            var averageCountDifference: Double {
+                var differences: [Double] = []
+
+                for i in 0..<(self.counts.count - 1) {
+                    differences.append(Double(self.counts[i + 1]) - Double(self.counts[i]))
+                }
+
+                return differences.reduce(0) { $0 + $1 } / Double(differences.count)
+            }
+
+            nonisolated func waitUntilFinished() async {
+                while await !self.finished {
+                    _ = try? await Task.sleep(nanoseconds: 1000)
+                }
+            }
+        }
+
+        let storage1 = Storage()
+        let storage2 = Storage()
+        let storage3 = Storage()
+
+        let progress1 = await CSProgress.discreteProgress(totalUnitCount: 1000, granularity: 0.005)
+        let progress2 = await CSProgress.discreteProgress(totalUnitCount: 1000, granularity: 0.01)
+        let progress3 = await CSProgress.discreteProgress(totalUnitCount: 1000, granularity: 0.02)
+
+        _ = await progress1.addFractionCompletedNotification { completed, total, _ in
+            await storage1.addCount(completed)
+
+            if completed == total {
+                await storage1.finish()
+            }
+        }
+
+        _ = await progress2.addFractionCompletedNotification { completed, total, _ in
+            await storage2.addCount(completed)
+
+            if completed == total {
+                await storage2.finish()
+            }
+        }
+
+        _ = await progress3.addFractionCompletedNotification { completed, total, _ in
+            await storage3.addCount(completed)
+
+            if completed == total {
+                await storage3.finish()
+            }
+        }
+
+        for _ in 0..<1000 {
+            await progress1.incrementCompletedUnitCount(by: 1)
+            await progress2.incrementCompletedUnitCount(by: 1)
+            await progress3.incrementCompletedUnitCount(by: 1)
+        }
+
+        await storage1.waitUntilFinished()
+        await XCTAssertEqualAsync(await storage1.averageCountDifference, 5.0, accuracy: 0.5)
+
+        await storage2.waitUntilFinished()
+        await XCTAssertEqualAsync(await storage2.averageCountDifference, 10.0, accuracy: 0.5)
+
+        await storage3.waitUntilFinished()
+        await XCTAssertEqualAsync(await storage3.averageCountDifference, 20.0, accuracy: 0.5)
+    }
+
     func testIndeterminate() async {
         let progress = await CSProgress.discreteProgress(totalUnitCount: 10)
         await XCTAssertFalseAsync(await progress.isIndeterminate)

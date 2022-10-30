@@ -15,31 +15,71 @@ extension CSProgress {
         pendingUnitCount: some BinaryInteger,
         granularity: Double = ProgressPortion.defaultGranularity
     ) async {
-        await self.init(
-            totalUnitCount: totalUnitCount,
-            parent: nil,
-            pendingUnitCount: pendingUnitCount,
-            granularity: granularity
-        )
-
-        await self.addToParent(parent, pendingUnitCount: pendingUnitCount)
+        await self.init(totalUnitCount: totalUnitCount, parent: nil, pendingUnitCount: 0, granularity: granularity)
+        await self.addToParent(parent, withPendingUnitCount: pendingUnitCount)
     }
 
-    internal func addToParent(_ parent: Foundation.Progress, pendingUnitCount: some BinaryInteger) async {
+    public convenience init(
+        wrapping ns: Foundation.Progress,
+        granularity: Double = ProgressPortion.defaultGranularity
+    ) async {
+        await self.init(totalUnitCount: 0, parent: nil, pendingUnitCount: 0, granularity: granularity)
+
+        await self.setUpWrapper(ns)
+    }
+
+    internal func addToParent(_ ns: Foundation.Progress, withPendingUnitCount pendingUnitCount: some BinaryInteger) async {
         let ns = await self.makeWrapperProgress(
-            parent: parent,
+            parent: ns,
             pendingUnitCount: pendingUnitCount,
-            fraction: await self.fractionCompleted
+            totalUnitCount: self.totalUnitCount,
+            completedUnitCount: self.completedUnitCount
         )
 
-        ns.cancellationHandler = { [weak self] in
-            guard let self else { return }
+        await self.setUpWrapper(ns)
+    }
 
-            Task.detached {
-                await self.cancel()
+    private func setUpWrapper(_ ns: Foundation.Progress) async {
+        await self.setWrappedProperties(ns: ns)
+        await self.setUpWrapperNotifications(ns: ns)
+
+        ns.cancellationHandler = { [weak self] in
+            if let self {
+                Task.detached {
+                    await self.cancel()
+                }
             }
         }
+    }
 
+    private func setWrappedProperties(ns: Foundation.Progress) async {
+        let (total, completed, desc, additionalDesc, isCancelled) = await MainActor.run {
+            (
+                ns.totalUnitCount,
+                ns.completedUnitCount,
+                ns.localizedDescription,
+                ns.localizedAdditionalDescription,
+                ns.isCancelled
+            )
+        }
+
+        await self.setTotalUnitCount(total)
+        await self.setCompletedUnitCount(completed)
+
+        if let desc {
+            await self.setLocalizedDescription(desc)
+        }
+
+        if let additionalDesc {
+            await self.setLocalizedAdditionalDescription(additionalDesc)
+        }
+
+        if isCancelled {
+            await self.cancel()
+        }
+    }
+
+    private func setUpWrapperNotifications(ns: Foundation.Progress) async {
         var fractionNotification: CSProgress.NotificationID? = nil
         var descriptionNotification: CSProgress.NotificationID? = nil
         var cancelNotification: CSProgress.NotificationID? = nil
@@ -62,12 +102,12 @@ extension CSProgress {
         }
 
         fractionNotification = await self.addFractionCompletedNotification { [weak self, weak ns] completed, total, frac in
-            guard let self else { return }
+            if let self {
+                await self.updateUnitCounts(ns: ns, fraction: frac)
 
-            await self.updateFractionCompleted(ns: ns, fraction: frac, isIndeterminate: self.isIndeterminate)
-
-            if completed >= total {
-                await removeNotifications()
+                if completed >= total {
+                    await removeNotifications()
+                }
             }
         }
 
@@ -84,22 +124,24 @@ extension CSProgress {
     @MainActor private func makeWrapperProgress(
         parent: Foundation.Progress,
         pendingUnitCount: some BinaryInteger,
-        fraction: Double
+        totalUnitCount: some BinaryInteger,
+        completedUnitCount: some BinaryInteger
     ) -> Foundation.Progress {
-        let progress = Foundation.Progress(totalUnitCount: 100, parent: parent, pendingUnitCount: Int64(pendingUnitCount))
+        let progress = Foundation.Progress(
+            totalUnitCount: Int64(totalUnitCount),
+            parent: parent,
+            pendingUnitCount: Int64(pendingUnitCount)
+        )
 
-        progress.completedUnitCount = Int64((fraction * 100.0).rounded())
+        progress.completedUnitCount = Int64(completedUnitCount)
 
         return progress
     }
 
-    @MainActor private func updateFractionCompleted(ns: Foundation.Progress?, fraction: Double, isIndeterminate: Bool) {
-        guard let ns else { return }
-
-        if isIndeterminate {
-            ns.completedUnitCount = -1
-        } else {
-            ns.completedUnitCount = Int64((fraction * 100.0).rounded())
+    @MainActor private func updateUnitCounts(ns: Foundation.Progress?, fraction: Double) {
+        if let ns {
+            ns.totalUnitCount = 1000
+            ns.completedUnitCount = Int64((fraction * 1000.0).rounded())
         }
     }
 
@@ -108,13 +150,15 @@ extension CSProgress {
         description: String,
         additionalDescription: String
     ) {
-        guard let ns else { return }
-
-        ns.localizedDescription = description
-        ns.localizedAdditionalDescription = additionalDescription
+        if let ns {
+            ns.localizedDescription = description
+            ns.localizedAdditionalDescription = additionalDescription
+        }
     }
 
     @MainActor private func updateCancellation(ns: Foundation.Progress?) {
-        ns?.cancel()
+        if let ns, !ns.isCancelled {
+            ns.cancel()
+        }
     }
 }

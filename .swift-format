@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lineLength": 125,
+  "indentation": {
+    "spaces": 4
+  },
+  "maximumBlankLines": 1,
+  "rules": {
+    "AllPublicDeclarationsHaveDocumentation": true,
+    "BeginDocumentationCommentWithOneLineSummary": true,
+    "ValidateDocumentationComments": true,
+  }
+}

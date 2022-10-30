@@ -31,9 +31,7 @@ internal final class AsyncBacking {
     private(set) var localizedAdditionalDescription: String = ""
 
     var isIndeterminate: Bool {
-        self.totalUnitCount < 0 ||
-        self.completedUnitCount < 0 ||
-        (self.totalUnitCount == 0 && self.completedUnitCount == 0)
+        self.totalUnitCount < 0 || self.completedUnitCount < 0 || (self.totalUnitCount == 0 && self.completedUnitCount == 0)
     }
 
     private(set) var isCancelled = false

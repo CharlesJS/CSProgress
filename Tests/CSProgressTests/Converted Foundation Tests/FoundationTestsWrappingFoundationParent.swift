@@ -24,7 +24,10 @@ final class FoundationTestsWrappingFoundationParent: XCTestCase {
             ("test_childCompletionFinishesGroups", test_childCompletionFinishesGroups),
             ("test_childrenAffectFractionCompleted_explicit", test_childrenAffectFractionCompleted_explicit),
             ("test_childrenAffectFractionCompleted_explicit_partial", test_childrenAffectFractionCompleted_explicit_partial),
-            ("test_childrenAffectFractionCompleted_explicit_child_already_complete", test_childrenAffectFractionCompleted_explicit_child_already_complete),
+            (
+                "test_childrenAffectFractionCompleted_explicit_child_already_complete",
+                test_childrenAffectFractionCompleted_explicit_child_already_complete
+            ),
             ("test_grandchildrenAffectFractionCompleted", test_grandchildrenAffectFractionCompleted),
             ("test_grandchildrenAffectFractionCompleted_explicit", test_grandchildrenAffectFractionCompleted_explicit),
             ("test_mixedExplicitAndImplicitChildren", test_mixedExplicitAndImplicitChildren),
@@ -58,7 +61,7 @@ final class FoundationTestsWrappingFoundationParent: XCTestCase {
 
         // Change the total in the child, doubling total amount of work
         await child1.setTotalUnitCount(200)
-        await XCTAssertEqualAsync (50.0 / 200.0, await child1.fractionCompleted, accuracy: 0.01)
+        await XCTAssertEqualAsync(50.0 / 200.0, await child1.fractionCompleted, accuracy: 0.01)
 
         try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(
@@ -283,31 +286,51 @@ final class FoundationTestsWrappingFoundationParent: XCTestCase {
         // child2 is half done. This means the parent is (half of 1/3 done) + (half of 1/3 done).
         await child2.setCompletedUnitCount(5)
         try await Task.sleep(nanoseconds: 1000000)
-        await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, ((1.0 / 3.0) / 2.0) * 2.0, accuracy: 0.01)
+        await XCTAssertEqualAsync(
+            await MainActor.run { parent.fractionCompleted },
+            ((1.0 / 3.0) / 2.0) * 2.0,
+            accuracy: 0.01
+        )
 
         // add an implict child
         let child3 = await parent.pass(pendingUnitCount: 1).makeChild(totalUnitCount: 10)
 
         // Total completed of parent should not change
         try await Task.sleep(nanoseconds: 1000000)
-        await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, ((1.0 / 3.0) / 2.0) * 2.0, accuracy: 0.01)
+        await XCTAssertEqualAsync(
+            await MainActor.run { parent.fractionCompleted },
+            ((1.0 / 3.0) / 2.0) * 2.0,
+            accuracy: 0.01
+        )
 
         // child3 is half done. This means the parent is (half of 1/3 done) * 3.
         await child3.setCompletedUnitCount(5)
         try await Task.sleep(nanoseconds: 1000000)
-        await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, ((1.0 / 3.0) / 2.0) * 3.0, accuracy: 0.01)
+        await XCTAssertEqualAsync(
+            await MainActor.run { parent.fractionCompleted },
+            ((1.0 / 3.0) / 2.0) * 3.0,
+            accuracy: 0.01
+        )
 
         // Finish child3
         await child3.setCompletedUnitCount(10)
         await XCTAssertTrueAsync(await child3.isFinished)
         try await Task.sleep(nanoseconds: 1000000)
-        await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, (((1.0 / 3.0) / 2.0) * 2.0) + (1.0 / 3.0), accuracy: 0.01)
+        await XCTAssertEqualAsync(
+            await MainActor.run { parent.fractionCompleted },
+            (((1.0 / 3.0) / 2.0) * 2.0) + (1.0 / 3.0),
+            accuracy: 0.01
+        )
 
         // Finish child2
         await child2.setCompletedUnitCount(10);
         await XCTAssertTrueAsync(await child2.isFinished)
         try await Task.sleep(nanoseconds: 1000000)
-        await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, ((1.0 / 3.0) / 2.0) + ((1.0 / 3.0) * 2.0), accuracy: 0.01)
+        await XCTAssertEqualAsync(
+            await MainActor.run { parent.fractionCompleted },
+            ((1.0 / 3.0) / 2.0) + ((1.0 / 3.0) * 2.0),
+            accuracy: 0.01
+        )
 
         // Finish child1
         await child1.setCompletedUnitCount(10);

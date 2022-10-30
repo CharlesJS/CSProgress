@@ -25,13 +25,15 @@ private func timeIt(label: String, closure: () async -> ()) async {
 
 func testNSProgresses() async {
     let mainProgress = Foundation.Progress.discreteProgress(totalUnitCount: Int64(unitCount) * 5)
-    let progresses = [mainProgress] + (0..<childCount).map { _ in
-        Foundation.Progress(
-            totalUnitCount: Int64(unitCount),
-            parent: mainProgress,
-            pendingUnitCount: Int64(childCount)
-        )
-    }
+    let progresses =
+        [mainProgress]
+        + (0..<childCount).map { _ in
+            Foundation.Progress(
+                totalUnitCount: Int64(unitCount),
+                parent: mainProgress,
+                pendingUnitCount: Int64(childCount)
+            )
+        }
 
     await timeIt(label: "NSProgress") {
         for eachProgress in progresses {
@@ -44,13 +46,15 @@ func testNSProgresses() async {
 
 func testNSProgressesWithAutoreleasePool() async {
     let mainProgress = Foundation.Progress.discreteProgress(totalUnitCount: Int64(unitCount) * 5)
-    let progresses = [mainProgress] + (0..<childCount).map { _ in
-        Foundation.Progress(
-            totalUnitCount: Int64(unitCount),
-            parent: mainProgress,
-            pendingUnitCount: Int64(childCount)
-        )
-    }
+    let progresses =
+        [mainProgress]
+        + (0..<childCount).map { _ in
+            Foundation.Progress(
+                totalUnitCount: Int64(unitCount),
+                parent: mainProgress,
+                pendingUnitCount: Int64(childCount)
+            )
+        }
 
     await timeIt(label: "NSProgress with Autorelease Pool") {
         for eachProgress in progresses {
@@ -65,9 +69,11 @@ func testNSProgressesWithAutoreleasePool() async {
 
 func testNSProgressesWithObserver() async {
     let mainProgress = Foundation.Progress.discreteProgress(totalUnitCount: Int64(unitCount) * 5)
-    let progresses = [mainProgress] + (0..<childCount).map { _ in
-        Foundation.Progress(totalUnitCount: Int64(unitCount), parent: mainProgress, pendingUnitCount: Int64(unitCount))
-    }
+    let progresses =
+        [mainProgress]
+        + (0..<childCount).map { _ in
+            Foundation.Progress(totalUnitCount: Int64(unitCount), parent: mainProgress, pendingUnitCount: Int64(unitCount))
+        }
 
     let watcher = mainProgress.observe(\.fractionCompleted) { _, _ in
         // handle it somehow
@@ -86,9 +92,11 @@ func testNSProgressesWithObserver() async {
 
 func testNSProgressesWithObserverAndAutoreleasePool() async {
     let mainProgress = Foundation.Progress.discreteProgress(totalUnitCount: Int64(unitCount) * 5)
-    let progresses = [mainProgress] + (0..<childCount).map { _ in
-        Foundation.Progress(totalUnitCount: Int64(unitCount), parent: mainProgress, pendingUnitCount: Int64(unitCount))
-    }
+    let progresses =
+        [mainProgress]
+        + (0..<childCount).map { _ in
+            Foundation.Progress(totalUnitCount: Int64(unitCount), parent: mainProgress, pendingUnitCount: Int64(unitCount))
+        }
 
     let watcher = mainProgress.observe(\.fractionCompleted) { _, _ in
         // handle it somehow
@@ -106,7 +114,6 @@ func testNSProgressesWithObserverAndAutoreleasePool() async {
 
     _ = watcher.self
 }
-
 
 private func makeCSProgresses() async -> [CSProgress] {
     let mainProgress = await CSProgress.discreteProgress(totalUnitCount: unitCount * 5, granularity: granularity)
@@ -203,15 +210,17 @@ func testCSProgressesRootedWithObservingNSProgress() async {
 
                     Task {
                         // keep watcher in storage to keep it from being reaped early
-                        await storage.setWatcher(mainProgress.observe(\.fractionCompleted) { progress, _ in
-                            if progress.isFinished {
-                                Task {
-                                    await storage.setWatcher(nil)
-                                }
+                        await storage.setWatcher(
+                            mainProgress.observe(\.fractionCompleted) { progress, _ in
+                                if progress.isFinished {
+                                    Task {
+                                        await storage.setWatcher(nil)
+                                    }
 
-                                continuation.resume()
+                                    continuation.resume()
+                                }
                             }
-                        })
+                        )
                     }
                 }
             }
@@ -263,4 +272,3 @@ func testCSProgressesUsedSynchronously() async {
         }
     }
 }
-

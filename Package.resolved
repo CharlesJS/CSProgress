@@ -5,8 +5,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/CharlesJS/XCTAsyncAssertions",
       "state" : {
-        "revision" : "8656600b08451b692f1bbbe442f4eb727954bfeb",
-        "version" : "0.1.0"
+        "revision" : "1c8c478443c39905183700105889016788ba12ad",
+        "version" : "0.1.1"
       }
     }
   ],

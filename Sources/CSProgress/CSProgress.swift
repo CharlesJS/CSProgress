@@ -240,7 +240,7 @@ public final class CSProgress {
     }
 
     public class NotificationID: Hashable {
-        static public func ==(lhs: NotificationID, rhs: NotificationID) -> Bool { lhs === rhs }
+        static public func == (lhs: NotificationID, rhs: NotificationID) -> Bool { lhs === rhs }
         public func hash(into hasher: inout Hasher) { ObjectIdentifier(self).hash(into: &hasher) }
     }
 
@@ -250,11 +250,10 @@ public final class CSProgress {
         case description
     }
 
-    private var cancellationNotifications: [NotificationID : NotificationStream<Void>] = [:]
-    private var descriptionNotifications: [NotificationID : NotificationStream<(String, String)>] = [:]
-    private var fractionCompletedNotifications: [
-        NotificationID : NotificationStream<(ProgressPortion.UnitCount, ProgressPortion.UnitCount, Double)>
-    ] = [:]
+    private var cancellationNotifications: [NotificationID: NotificationStream<Void>] = [:]
+    private var descriptionNotifications: [NotificationID: NotificationStream<(String, String)>] = [:]
+    private var fractionCompletedNotifications:
+        [NotificationID: NotificationStream<(ProgressPortion.UnitCount, ProgressPortion.UnitCount, Double)>] = [:]
 
     @ProgressIsolator private var lastNotifiedFractionCompleted: Double = 0.0
 

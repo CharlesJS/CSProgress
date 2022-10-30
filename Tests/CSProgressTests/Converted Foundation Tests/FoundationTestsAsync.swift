@@ -22,7 +22,10 @@ final class FoundationTestsCSProgress: XCTestCase {
             ("test_childCompletionFinishesGroups", test_childCompletionFinishesGroups),
             ("test_childrenAffectFractionCompleted_explicit", test_childrenAffectFractionCompleted_explicit),
             ("test_childrenAffectFractionCompleted_explicit_partial", test_childrenAffectFractionCompleted_explicit_partial),
-            ("test_childrenAffectFractionCompleted_explicit_child_already_complete", test_childrenAffectFractionCompleted_explicit_child_already_complete),
+            (
+                "test_childrenAffectFractionCompleted_explicit_child_already_complete",
+                test_childrenAffectFractionCompleted_explicit_child_already_complete
+            ),
             ("test_grandchildrenAffectFractionCompleted", test_grandchildrenAffectFractionCompleted),
             ("test_grandchildrenAffectFractionCompleted_explicit", test_grandchildrenAffectFractionCompleted_explicit),
             ("test_mixedExplicitAndImplicitChildren", test_mixedExplicitAndImplicitChildren),
@@ -56,7 +59,7 @@ final class FoundationTestsCSProgress: XCTestCase {
 
         // Change the total in the child, doubling total amount of work
         await child1.setTotalUnitCount(200)
-        await XCTAssertEqualAsync (50.0 / 200.0, await child1.fractionCompleted, accuracy: 0.01)
+        await XCTAssertEqualAsync(50.0 / 200.0, await child1.fractionCompleted, accuracy: 0.01)
         await XCTAssertEqualAsync((50.0 / 200.0) * (10.0 / 200), await parent.fractionCompleted, accuracy: 0.01)
 
         // Change the total in the child, the other direction, halving the amount of work
@@ -280,21 +283,23 @@ final class FoundationTestsCSProgress: XCTestCase {
     func test_notReturningNaN() async {
         let p = await CSProgress.discreteProgress(totalUnitCount: 0)
 
-        let tests = [(-1, -1, true, 0.0),
-                     (0, -1, true, 0.0),
-                     (1, -1, true, 0.0),
-                     (-1, 0, true, 0.0),
-                     (0, 0, true, 0.0),
-                     (1, 0, false, 1.0),
-                     (-1, 1, true, 0.0),
-                     (0, 1, false, 0.0),
-                     (1, 1, false, 1.0)]
+        let tests = [
+            (-1, -1, true, 0.0),
+            (0, -1, true, 0.0),
+            (1, -1, true, 0.0),
+            (-1, 0, true, 0.0),
+            (0, 0, true, 0.0),
+            (1, 0, false, 1.0),
+            (-1, 1, true, 0.0),
+            (0, 1, false, 0.0),
+            (1, 1, false, 1.0),
+        ]
 
         for t in tests {
             await p.setCompletedUnitCount(t.0)
             await p.setTotalUnitCount(t.1)
             await XCTAssertEqualAsync(t.2, await p.isIndeterminate, "failed with \(t)")
-            await XCTAssertEqualAsync(t.3, await p.fractionCompleted,  "failed with \(t)")
+            await XCTAssertEqualAsync(t.3, await p.fractionCompleted, "failed with \(t)")
         }
     }
 

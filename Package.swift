@@ -19,7 +19,7 @@ let package = Package(
         .library(
             name: "CSProgress+Foundation",
             targets: ["CSProgress+Foundation"]
-        )
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/CharlesJS/XCTAsyncAssertions", from: "0.1.0")
@@ -42,6 +42,6 @@ let package = Package(
             dependencies: ["CSProgress", "CSProgress+Foundation"],
             path: "Tests/CSProgressPerformanceTests",
             swiftSettings: [.unsafeFlags(["-O"])]
-        )
+        ),
     ]
 )

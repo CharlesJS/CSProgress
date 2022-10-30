@@ -167,6 +167,6 @@ final class WrappingTest: XCTestCase {
         await MainActor.run {}
         await XCTAssertEqualAsync(await storage.accessCount, 2)
 
-        _ = watcher.self // prevent ARC from reaping the watcher early
+        _ = watcher.self  // prevent ARC from reaping the watcher early
     }
 }

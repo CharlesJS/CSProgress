@@ -14,7 +14,7 @@ public struct ProgressPortion {
         case async(CSProgress)
         case opaque(any OpaqueProgressType)
 
-        public static func ==(lhs: ProgressPortion.ProgressType, rhs: ProgressPortion.ProgressType) -> Bool {
+        public static func == (lhs: ProgressPortion.ProgressType, rhs: ProgressPortion.ProgressType) -> Bool {
             switch lhs {
             case .async(let progress1):
                 switch rhs {

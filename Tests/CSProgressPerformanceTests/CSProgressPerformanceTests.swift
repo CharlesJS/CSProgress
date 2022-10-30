@@ -151,7 +151,7 @@ func testCSProgressesWithObserver() async {
                         var notification: CSProgress.NotificationID? = nil
 
                         notification = await mainProgress.addFractionCompletedNotification { completed, _, _ in
-                            if completed == unitCount * childCount {
+                            if completed == unitCount * (childCount + 1) {
                                 await mainProgress.removeFractionCompletedNotification(identifier: notification!)
 
                                 continuation.resume()
@@ -239,7 +239,7 @@ func testCSProgressesUsedSynchronously() async {
                         var notification: CSProgress.NotificationID? = nil
 
                         notification = await mainProgress.addFractionCompletedNotification { completed, _, _ in
-                            if completed == unitCount * childCount {
+                            if completed == unitCount * (childCount + 1) {
                                 await mainProgress.removeFractionCompletedNotification(identifier: notification!)
 
                                 continuation.resume()

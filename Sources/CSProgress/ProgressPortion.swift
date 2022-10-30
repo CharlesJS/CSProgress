@@ -52,24 +52,6 @@ public struct ProgressPortion {
                 }
             }
         }
-
-        internal func addChild(_ child: CSProgress, withPendingUnitCount pendingUnitCount: some BinaryInteger) async {
-            switch self {
-            case .async(let progress):
-                await progress.addChild(child, withPendingUnitCount: pendingUnitCount)
-            case .opaque(let progress):
-                await progress.addChild(child, withPendingUnitCount: pendingUnitCount)
-            }
-        }
-
-        internal func pass(pendingUnitCount: some BinaryInteger) -> ProgressPortion {
-            switch self {
-            case .async(let progress):
-                return progress.pass(pendingUnitCount: pendingUnitCount)
-            case .opaque(let progress):
-                return progress.pass(pendingUnitCount: pendingUnitCount)
-            }
-        }
     }
 
     private enum ProgressWrapper {
@@ -134,13 +116,14 @@ public struct ProgressPortion {
     /// For the case where the child operation is atomic, just mark the pending units as complete rather than
     /// going to the trouble of creating a child progress.
     /// Can also be useful for error conditions where the operation should simply be skipped.
+    /// Calling `markComplete` after a child progress has already been made from this `ProgressPortion` results in undefined behavior.
     public func markComplete() async {
         switch self.progress {
         case .none: break
         case .async(let progress):
-            await progress.setCompletedUnitCount(self.pendingUnitCount)
+            await progress.incrementCompletedUnitCount(by: self.pendingUnitCount)
         case .opaque(let progress):
-            progress.completedUnitCount = UnitCount(self.pendingUnitCount)
+            progress.completedUnitCount += UnitCount(self.pendingUnitCount)
         }
     }
 

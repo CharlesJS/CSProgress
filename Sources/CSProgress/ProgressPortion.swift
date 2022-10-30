@@ -95,17 +95,46 @@ public struct ProgressPortion {
         self.pendingUnitCount = UnitCount(pendingUnitCount)
     }
 
-    /// This creates a child progress, attached to the parent progress with the pending unit count specified when this struct was created.
-    public func makeChild(totalUnitCount: some BinaryInteger) async -> CSProgress {
+    /// Creates a child `CSProgress` object.
+    ///
+    /// - Parameters:
+    ///   - totalUnitCount: The total unit count for the newly created `CSProgress`.
+    ///   - granularity: Specifies the amount of change that should occur to the child progress's `fractionCompleted` property before its
+    ///     notifications are fired.
+    ///     A notification will be sent whenever the difference between the current value of `fractionCompleted` and the value at the last time a notification
+    ///     was sent exceeds the granularity.
+    ///     This eliminates notifications that are too small to be noticeable, increasing performance.
+    ///     Default value is 0.01.
+    ///
+    /// - Returns: A new child progress, which will be attached to the parent progress with the pending unit count that was specified when this struct was created.
+    public func makeChild(
+        totalUnitCount: some BinaryInteger,
+        granularity: Double = ProgressPortion.defaultGranularity
+    ) async -> CSProgress {
         switch self.progress {
         case .none:
-            return await CSProgress(totalUnitCount: totalUnitCount, parent: nil, pendingUnitCount: 0)
+            return await CSProgress(
+                totalUnitCount: totalUnitCount,
+                parent: nil,
+                pendingUnitCount: 0,
+                granularity: granularity
+            )
         case .async(let progress):
             let pendingUnitCount = self.pendingUnitCount
 
-            return await CSProgress(totalUnitCount: totalUnitCount, parent: progress, pendingUnitCount: pendingUnitCount)
+            return await CSProgress(
+                totalUnitCount: totalUnitCount,
+                parent: progress,
+                pendingUnitCount: pendingUnitCount,
+                granularity: granularity
+            )
         case .opaque(let progress):
-            let child = await CSProgress(totalUnitCount: totalUnitCount, parent: nil, pendingUnitCount: 0)
+            let child = await CSProgress(
+                totalUnitCount: totalUnitCount,
+                parent: nil,
+                pendingUnitCount: 0,
+                granularity: granularity
+            )
 
             await progress.addChild(child, withPendingUnitCount: pendingUnitCount)
 

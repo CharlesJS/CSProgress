@@ -5,6 +5,9 @@
 //  Created by Charles Srstka on 10/23/22.
 //
 
+/// A protocol used for supporting bridging to other progress types, like `Foundation.Progress`.
+///
+/// You should not need to deal with this protocol directly.
 public protocol OpaqueProgressType: AnyObject, Equatable {
     var isCancelled: Bool { get }
     func cancel()

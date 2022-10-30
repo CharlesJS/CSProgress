@@ -5,13 +5,17 @@
 //  Copyright © 2016-2022 Charles Srstka. All rights reserved.
 //
 
+/// An object that conveys ongoing progress to the user for a specified task.
+///
+/// Similar to Foundation's `Progress` class, but much more performant.
+/// `CSProgress` is designed with concurrency in mind, and is implemented around actors and `async`/`await` rather than locks or semaphores.
 public final class CSProgress {
     // Notification types.
 
-    /// This closure will be executed if the progress is cancelled.
+    /// A closure that will be executed if the progress is cancelled.
     public typealias CancellationNotification = () async -> ()
 
-    /// This closure will be executed whenever the change in fractionCompleted exceeds the granularity.
+    /// A closure that will be executed whenever the change in `fractionCompleted` exceeds the progress's `granularity`.
     public typealias FractionCompletedNotification = (
         _ completedUnitCount: ProgressPortion.UnitCount,
         _ totalUnitCount: ProgressPortion.UnitCount,
@@ -24,15 +28,17 @@ public final class CSProgress {
         _ localizedAdditionalDescription: String
     ) async -> ()
 
-    /**
-     Corresponds to NSProgress's -discreteProgressWithTotalUnitCount:.
-
-     - parameter totalUnitCount: The total unit count for this progress.
-
-     - parameter granularity: Specifies the amount of change that should occur to the progress's fractionCompleted property before its notifications are fired.
-     This eliminates notifications that are too small to be noticeable, increasing performance.
-     Default value is 0.01.
-     */
+    /// Creates and returns a progress instance with the specified unit count that isn't part of any existing progress tree.
+    ///
+    /// - Parameters:
+    ///   - totalUnitCount: The total unit count for this progress.
+    ///   - granularity: Specifies the amount of change that should occur to the progress's `fractionCompleted` property before its
+    ///     notifications are fired.
+    ///     A notification will be sent whenever the difference between the current value of `fractionCompleted` and the value at the last time a notification
+    ///     was sent exceeds the granularity.
+    ///     This eliminates notifications that are too small to be noticeable, increasing performance.
+    ///     Default value is 0.01.
+    /// - Returns: A new progress instance.
     public static func discreteProgress(
         totalUnitCount: some BinaryInteger,
         granularity: Double = ProgressPortion.defaultGranularity
@@ -40,19 +46,18 @@ public final class CSProgress {
         await self.init(totalUnitCount: totalUnitCount, parent: nil, pendingUnitCount: 0, granularity: granularity)
     }
 
-    /**
-     Corresponds to NSProgress's -initWithTotalUnitCount:parent:pendingUnitCount:.
-
-     - parameter totalUnitCount: The total unit count for this progress.
-
-     - parameter parent: The progress's parent. Can be nil.
-
-     - parameter pendingUnitCount: The portion of the parent's totalUnitCount that this progress object represents. Pass zero for a nil parent.
-
-     - parameter granularity: Specifies the amount of change that should occur to the progress's fractionCompleted property before its notifications are fired.
-     This eliminates notifications that are too small to be noticeable, increasing performance.
-     Default value is 0.01.
-     */
+    /// Creates a progress instance for the specified progress object with a unit count that's a portion of the containing object's total unit count.
+    ///
+    /// - Parameters:
+    ///   - totalUnitCount: The total unit count for this progress.
+    ///   - parent: The progress's parent. Can be nil.
+    ///   - pendingUnitCount: The portion of the parent's `totalUnitCount` that this progress object represents. Pass zero for a `nil` parent.
+    ///   - granularity: Specifies the amount of change that should occur to the progress's `fractionCompleted` property before its
+    ///     notifications are fired.
+    ///     A notification will be sent whenever the difference between the current value of `fractionCompleted` and the value at the last time a notification
+    ///     was sent exceeds the granularity.
+    ///     This eliminates notifications that are too small to be noticeable, increasing performance.
+    ///     Default value is 0.01.
     public convenience init(
         totalUnitCount: some BinaryInteger,
         parent: CSProgress?,
@@ -94,6 +99,7 @@ public final class CSProgress {
         self.parent = parent
     }
 
+    /// A Boolean value that indicates whether the progress object is complete.
     public var isFinished: Bool {
         get async { await self.backing.isCompleted }
     }
@@ -103,6 +109,7 @@ public final class CSProgress {
         get async { await self.backing.totalUnitCount }
     }
 
+    /// Sets the total number of units of work to be carried out.
     public func setTotalUnitCount(_ count: some BinaryInteger) async {
         @ProgressIsolator func set(_ count: some BinaryInteger) {
             let result = self.backing.setTotalUnitCount(ProgressPortion.UnitCount(count))
@@ -121,6 +128,7 @@ public final class CSProgress {
         get async { await self.backing.completedUnitCount }
     }
 
+    /// Sets the number of units of work for the current job that have already been completed.
     public func setCompletedUnitCount(_ count: some BinaryInteger) async {
         @ProgressIsolator func set(_ count: some BinaryInteger) {
             let result = self.backing.setCompletedUnitCount(ProgressPortion.UnitCount(count))
@@ -134,7 +142,7 @@ public final class CSProgress {
         await set(count)
     }
 
-    /// Perform increment as one atomic operation, eliminating an unnecessary `await` and increasing performance.
+    /// Increment the completed unit count as one atomic operation, eliminating an unnecessary `await` and increasing performance.
     public func incrementCompletedUnitCount(by delta: some BinaryInteger) async {
         @ProgressIsolator func increment(_ delta: some BinaryInteger) {
             let result = self.backing.incrementCompletedUnitCount(by: ProgressPortion.UnitCount(delta))
@@ -193,6 +201,7 @@ public final class CSProgress {
         get async { await self.backing.localizedDescription }
     }
 
+    /// Set the localized description of progress tracked by the receiver.
     public func setLocalizedDescription(_ desc: String) async {
         await Task { @ProgressIsolator in
             self.backing.setLocalizedDescription(desc)
@@ -205,6 +214,7 @@ public final class CSProgress {
         get async { await self.backing.localizedAdditionalDescription }
     }
 
+    /// Set the more specific localized description of progress tracked by the receiver.
     public func setLocalizedAdditionalDescription(_ desc: String) async {
         await Task { @ProgressIsolator in
             self.backing.setLocalizedAdditionalDescription(desc)
@@ -212,36 +222,120 @@ public final class CSProgress {
         }.value
     }
 
-    /**
-     Specifies the amount of change that should occur to the progress's fractionCompleted property before its notifications are fired.
-     This eliminates notifications that are too small to be noticeable, increasing performance.
-     Default value is 0.01.
-     */
+    /// Specifies the amount of change that should occur to the progress's fractionCompleted property before its notifications are fired.
+    ///
+    /// This eliminates notifications that are too small to be noticeable, increasing performance.
+    /// Default value is 0.01.
     public let granularity: Double
 
-    /**
-     Create a reference to a parent progress, encapsulating both it and its pending unit count.
-     This allows the child function to attach a new progress without knowing details about the parent progress and its unit count.
-     */
+    /// Create a reference to a parent progress, encapsulating both it and its pending unit count.
+    ///
+    /// This allows the child function to attach a new progress without knowing details about the parent progress and its unit count.
+    ///
+    /// - Parameter pendingUnitCount: The portion of the parent's `totalUnitCount` that this progress object represents. Pass zero for a `nil` parent.
+    /// - Returns: A reference to the portion of the progress represented by `pendingUnitCount`, which can be passed to a child function.
     public func pass(pendingUnitCount: some BinaryInteger) -> ProgressPortion {
         ProgressPortion(progress: self, pendingUnitCount: ProgressPortion.UnitCount(pendingUnitCount))
     }
 
-    /**
-     Add a progress object as a child of a progress tree. The inUnitCount indicates the expected work for the progress unit.
-
-     - parameter child: The CSProgress instance to add to the progress tree.
-
-     - parameter pendingUnitCount: The number of units of work to be carried out by the new child.
-     */
+    /// Add a progress object as a child of a progress tree.
+    ///
+    /// - Parameters:
+    ///   - child: The CSProgress instance to add to the progress tree.
+    ///   - pendingUnitCount: The number of units of work to be carried out by the new child.
     public func addChild(_ child: CSProgress, withPendingUnitCount pendingUnitCount: some BinaryInteger) async {
         await self.backing.addChild(child, pendingUnitCount: ProgressPortion.UnitCount(pendingUnitCount))
         await child.setParent(self)
     }
 
+    /// An identifier for a notification.
+    ///
+    /// You can pass this object to `CSProgress`'s `remove*Notification()` methods to disable the notification.
     public class NotificationID: Hashable {
+        /// Returns a Boolean value indicating whether two notification IDs are equal.
         static public func == (lhs: NotificationID, rhs: NotificationID) -> Bool { lhs === rhs }
+        /// Hashes the essential components of this value by feeding them into the given hasher.
         public func hash(into hasher: inout Hasher) { ObjectIdentifier(self).hash(into: &hasher) }
+    }
+
+    /// Add a notification which will be called if the progress object is cancelled.
+    ///
+    /// - Parameters:
+    ///   - priority: An optional value that specifies the task priority at which notifications will be fired.
+    ///   - notification: A notification that will be called if the progress object is cancelled.
+    ///
+    /// - Returns: An identifier that can be passed to `removeCancellationNotification()` to disable the notification.
+    @discardableResult
+    public func addCancellationNotification(
+        priority: TaskPriority? = nil,
+        notification: @escaping CancellationNotification
+    ) async -> NotificationID {
+        let id = NotificationID()
+
+        await self._addCancellationNotification(identifier: id, priority: priority, notification: notification)
+
+        return id
+    }
+
+    /// Remove a notification previously added via `addCancellationNotification()`.
+    ///
+    /// - Parameter identifier: The identifier previously returned by `addCancellationNotification()` for the notification you wish to remove.
+    public func removeCancellationNotification(identifier: NotificationID) async {
+        await self._removeCancellationNotification(identifier: identifier)
+    }
+
+    /// Add a notification which will be called when the progress object's `fractionCompleted` property changes by an amount greater than the
+    /// progress object's `granularity`.
+    ///
+    /// - Parameters:
+    ///   - priority: An optional value that specifies the task priority at which notifications will be fired.
+    ///   - notification: A notification that will be called when the `fractionCompleted` property is significantly changed.
+    ///
+    /// - Returns: An identifier that can be passed to `removeFractionCompletedNotification()` to disable the notification.
+    @discardableResult public func addFractionCompletedNotification(
+        priority: TaskPriority? = nil,
+        notification: @escaping FractionCompletedNotification
+    ) async -> NotificationID {
+        let id = NotificationID()
+
+        await self._addFractionCompletedNotification(identifier: id, priority: priority, notification: notification)
+
+        return id
+    }
+
+    /// Remove a notification previously added via `addFractionCompletedNotification()`.
+    ///
+    /// - Parameter identifier: The identifier previously returned by `addFractionCompletedNotification()` for the notification you wish to remove.
+    public func removeFractionCompletedNotification(identifier: NotificationID) async {
+        await self._removeFractionCompletedNotification(identifier: identifier)
+    }
+
+    /// Add a notification which will be called when the progress object's `localizedDescription` or `localizedAdditionalDescription` property changes.
+    ///
+    /// - Parameters:
+    ///   - priority: An optional value that specifies the task priority at which notifications will be fired.
+    ///   - notification: A notification that will be called when the `localizedDescription` or `localizedAdditionalDescriptionleted`
+    ///    property is changed.
+    ///
+    /// - Returns: An identifier that can be passed to `removeDescriptionNotification()` to disable the notification.
+    @discardableResult public func addDescriptionNotification(
+        priority: TaskPriority? = nil,
+        notification: @escaping DescriptionNotification
+    ) -> NotificationID {
+        let id = NotificationID()
+
+        Task {
+            await self._addDescriptionNotification(identifier: id, priority: priority, notification: notification)
+        }
+
+        return id
+    }
+
+    /// Remove a notification previously added via `addDescriptionNotification()`.
+    ///
+    /// - Parameter identifier: The identifier previously returned by `addDescriptionNotification()` for the notification you wish to remove.
+    public func removeDescriptionNotification(identifier: NotificationID) async {
+        await self._removeDescriptionNotification(identifier: identifier)
     }
 
     private enum NotificationType {
@@ -325,107 +419,6 @@ public final class CSProgress {
         self.descriptionNotifications[identifier] = nil
     }
 
-    /**
-     Add a notification which will be called if the progress object is cancelled.
-
-     - parameter queue: Specifies an operation queue on which the notification will be fired.
-     The queue should either be a serial queue, or should have its maxConcurrentOperationCount set to something low
-     to prevent excessive threads from being created.
-     This parameter defaults to the main operation queue.
-
-     - parameter notification: A notification that will be called if the progress object is cancelled.
-
-     - returns: An opaque value that can be passed to removeCancellationNotification() to de-register the notification.
-     */
-    @discardableResult
-    public func addCancellationNotification(
-        priority: TaskPriority? = nil,
-        notification: @escaping CancellationNotification
-    ) async -> NotificationID {
-        let id = NotificationID()
-
-        await self._addCancellationNotification(identifier: id, priority: priority, notification: notification)
-
-        return id
-    }
-
-    /**
-     Remove a notification previously added via addCancellationNotification().
-
-     - parameter identifier: The identifier previously returned by addCancellationNotification() for the notification you wish to remove.
-     */
-    public func removeCancellationNotification(identifier: NotificationID) async {
-        await self._removeCancellationNotification(identifier: identifier)
-    }
-
-    /**
-     Add a notification which will be called when the progress object's fractionCompleted property changes by an amount greater than the progress object's granularity.
-
-     - parameter queue: Specifies an operation queue on which the notification will be fired.
-     The queue should either be a serial queue, or should have its maxConcurrentOperationCount set to something low
-     to prevent excessive threads from being created.
-     This parameter defaults to the main operation queue.
-
-     - parameter notification: A notification that will be called when the fractionCompleted property is significantly changed.
-     This notification will be called on the progress object's queue.
-
-     - returns: An opaque value that can be passed to removeFractionCompletedNotification() to de-register the notification.
-     */
-    @discardableResult public func addFractionCompletedNotification(
-        priority: TaskPriority? = nil,
-        notification: @escaping FractionCompletedNotification
-    ) async -> NotificationID {
-        let id = NotificationID()
-
-        await self._addFractionCompletedNotification(identifier: id, priority: priority, notification: notification)
-
-        return id
-    }
-
-    /**
-     Remove a notification previously added via addFractionCompletedNotification().
-
-     - parameter identifier: The identifier previously returned by addFractionCompletedNotification() for the notification you wish to remove.
-     */
-    public func removeFractionCompletedNotification(identifier: NotificationID) async {
-        await self._removeFractionCompletedNotification(identifier: identifier)
-    }
-
-    /**
-     Add a notification which will be called when the progress object's localizedDescription or localizedAdditionalDescription property changes.
-
-     - parameter queue: Specifies an operation queue on which the notification will be fired.
-     The queue should either be a serial queue, or should have its maxConcurrentOperationCount set to something low
-     to prevent excessive threads from being created.
-     This parameter defaults to the main operation queue.
-
-     - parameter notification: A notification that will be called when the fractionComplocalizedDescription or localizedAdditionalDescriptionleted property is changed.
-     This notification will be called on the progress object's queue.
-
-     - returns: An opaque value that can be passed to removeDescriptionNotification() to de-register the notification.
-     */
-    @discardableResult public func addDescriptionNotification(
-        priority: TaskPriority? = nil,
-        notification: @escaping DescriptionNotification
-    ) -> NotificationID {
-        let id = NotificationID()
-
-        Task {
-            await self._addDescriptionNotification(identifier: id, priority: priority, notification: notification)
-        }
-
-        return id
-    }
-
-    /**
-     Remove a notification previously added via addDescriptionNotification().
-
-     - parameter identifier: The identifier previously returned by addDescriptionNotification() for the notification you wish to remove.
-     */
-    public func removeDescriptionNotification(identifier: NotificationID) async {
-        await self._removeDescriptionNotification(identifier: identifier)
-    }
-
     // Fire our cancellation notifications.
     @ProgressIsolator
     private func sendCancellationNotifications() {
@@ -487,6 +480,7 @@ public final class CSProgress {
         }
     }
 
+    /// A textual description of the progress, suitable for debugging.
     public var debugDescription: String {
         get async { await self._debugDescription }
     }

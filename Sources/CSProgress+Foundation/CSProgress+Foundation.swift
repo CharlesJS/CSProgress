@@ -9,6 +9,18 @@ import Foundation
 import CSProgress
 
 extension CSProgress {
+    /// Creates a progress instance for the specified `Foundation.Progress` object with a unit count that's a portion of the containing object's total unit count.
+    ///
+    /// This is useful for integrating `CSProgress` into existing `Foundation.Progress` trees without requiring the entire tree to be refactored.
+    /// All notifications for the parent `Foundation.Progress` object are sent on the main thread.
+    ///
+    /// - Parameters:
+    ///   - totalUnitCount: The total number of units of work to assign to the progress instance.
+    ///   - parent: The containing `Foundation.Progress` object for the created `CSProgress` object.
+    ///   - pendingUnitCount: The unit count for the progress object.
+    ///   - granularity: Determines the frequency with which `fractionCompleted` notifications are sent.
+    ///     A notification will be sent whenever the difference between the current value of `fractionCompleted`
+    ///     and the value at the last time a notification was sent exceeds the granularity.
     public convenience init(
         totalUnitCount: some BinaryInteger,
         parent: Foundation.Progress,
@@ -19,6 +31,18 @@ extension CSProgress {
         await self.addToParent(parent, withPendingUnitCount: pendingUnitCount)
     }
 
+    /// Creates a progress instance wrapping a `Foundation.Progress` object.
+    ///
+    /// All changes to this object will result in corresponding changes being made to the `Foundation.Progress` object.
+    /// All changes, as well as any subsequent KVO notifications that the `Foundation.Progress` object sends, will occur on the main thread.
+    /// This binding is not two-way; the `Foundation.Progress` object that this wraps should be considered as owned by the wrapping `CSProgress` object.
+    /// After this binding is created, any manual changes to the `Foundation.Progress` object will be overwritten by the `CSProgress` object.
+    ///
+    /// - Parameters:
+    ///   - ns: The `Foundation.Progress` object to be wrapped.
+    ///   - granularity: Determines the frequency with which `fractionCompleted` notifications are sent.
+    ///     A notification will be sent whenever the difference between the current value of `fractionCompleted`
+    ///     and the value at the last time a notification was sent exceeds the granularity.
     public convenience init(
         wrapping ns: Foundation.Progress,
         granularity: Double = ProgressPortion.defaultGranularity

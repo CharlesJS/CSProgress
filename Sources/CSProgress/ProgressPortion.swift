@@ -5,16 +5,17 @@
 //
 
 /// Convenience struct for passing an `CSProgress` to a child function, encapsulating the parent progress and its pending unit count.
-/// Create one of these by calling .pass() on the parent progress.
+///
+/// Create one of these by calling `pass()` on the parent progress.
 public struct ProgressPortion {
-    // Declare our own unit count type instead of hard-coding it to Int64, for future flexibility.
+    /// A numeric value representing an amount of work handled by a progress object.
     public typealias UnitCount = Int64
 
     internal enum ProgressType: Equatable {
         case async(CSProgress)
         case opaque(any OpaqueProgressType)
 
-        public static func == (lhs: ProgressPortion.ProgressType, rhs: ProgressPortion.ProgressType) -> Bool {
+        static func == (lhs: ProgressPortion.ProgressType, rhs: ProgressPortion.ProgressType) -> Bool {
             switch lhs {
             case .async(let progress1):
                 switch rhs {
@@ -33,7 +34,7 @@ public struct ProgressPortion {
             }
         }
 
-        public func cancel() async {
+        func cancel() async {
             switch self {
             case .async(let progress):
                 await progress.cancel()
@@ -42,7 +43,7 @@ public struct ProgressPortion {
             }
         }
 
-        public var isCancelled: Bool {
+        var isCancelled: Bool {
             get async {
                 switch self {
                 case .async(let progress):
@@ -76,15 +77,24 @@ public struct ProgressPortion {
         }
     }
 
-    // By default, we'll update 100 times over the course of our progress. This should provide a decent user experience
-    // without compromising too much on performance.
+    /// The default value for `granularity` when creating a new child progress object.
+    ///
+    /// By default, we update 100 times over the course of our progress.
+    /// This should provide a decent user experience without compromising too much on performance.
     public static let defaultGranularity: Double = 0.01
 
     private let progressWrapper: ProgressWrapper
 
     internal var progress: ProgressType? { self.progressWrapper.progress }
+
+    /// The amount of work units in the parent progress represented by this `ProgressPortion`.
     public let pendingUnitCount: UnitCount
 
+    /// Create a new progress portion.
+    ///
+    /// - Parameters:
+    ///   - progress: The parent progress.
+    ///   - pendingUnitCount: The amount of work units in the parent progress represented by this portion.
     public init(progress: CSProgress, pendingUnitCount: some BinaryInteger) {
         self.progressWrapper = .async(.init(progress: progress))
         self.pendingUnitCount = UnitCount(pendingUnitCount)
@@ -142,10 +152,11 @@ public struct ProgressPortion {
         }
     }
 
-    /// For the case where the child operation is atomic, just mark the pending units as complete rather than
-    /// going to the trouble of creating a child progress.
-    /// Can also be useful for error conditions where the operation should simply be skipped.
-    /// Calling `markComplete` after a child progress has already been made from this `ProgressPortion` results in undefined behavior.
+    /// Marks the amount of work represented by this progress portion as complete.
+    ///
+    /// This can also be useful for error conditions where the operation should simply be skipped.
+    /// Do not call `markComplete` after a child progress has already been made from this `ProgressPortion`.
+    /// Doing so results in undefined behavior.
     public func markComplete() async {
         switch self.progress {
         case .none: break
@@ -156,8 +167,10 @@ public struct ProgressPortion {
         }
     }
 
-    /// Convenience methods to quickly cancel a progress, and check whether the progress is cancelled
+    /// Convenience method to quickly cancel a progress.
     public func cancel() async { await self.progress?.cancel() }
+
+    /// Convenience property to quickly check whether the parent progress has been cancelled.
     public var isCancelled: Bool {
         get async { await self.progress?.isCancelled ?? false }
     }

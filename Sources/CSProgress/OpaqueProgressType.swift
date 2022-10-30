@@ -1,6 +1,6 @@
 //
 //  OpaqueProgressType.swift
-//  
+//
 //
 //  Created by Charles Srstka on 10/23/22.
 //

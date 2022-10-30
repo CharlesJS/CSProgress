@@ -1,13 +1,15 @@
 //
 //  main.swift
-//  CSProgress
 //
-//  Created by Charles Srstka on 1/23/17.
-//  Copyright © 2017 Charles Srstka. All rights reserved.
+//
+//  Created by Charles Srstka on 10/24/22.
 //
 
-import Foundation
-
-if #available(macOS 10.11, *) {
-    TimeCSProgresses()
-}
+await testNSProgresses()
+await testNSProgressesWithAutoreleasePool()
+await testNSProgressesWithObserver()
+await testNSProgressesWithObserverAndAutoreleasePool()
+await testCSProgresses()
+await testCSProgressesWithObserver()
+await testCSProgressesRootedWithObservingNSProgress()
+await testCSProgressesUsedSynchronously()

@@ -16,10 +16,10 @@ let package = Package(
             name: "CSProgress",
             targets: ["CSProgress"]
         ),
-//        .library(
-//            name: "CSProgress+Foundation",
-//            targets: ["CSProgress+Foundation"]
-//        )
+        .library(
+            name: "CSProgress+Foundation",
+            targets: ["CSProgress+Foundation"]
+        )
     ],
     dependencies: [
         .package(url: "https://github.com/CharlesJS/XCTAsyncAssertions", from: "0.1.0")
@@ -29,20 +29,19 @@ let package = Package(
             name: "CSProgress",
             dependencies: []
         ),
-//        .target(
-//            name: "CSProgress+Foundation",
-//            dependencies: [],
-//            path: "Sources/CSProgress",
-//            swiftSettings: [.define("USE_FOUNDATION")]
-//        ),
+        .target(
+            name: "CSProgress+Foundation",
+            dependencies: ["CSProgress"]
+        ),
         .testTarget(
             name: "CSProgressTests",
-            dependencies: ["CSProgress", "XCTAsyncAssertions"]
+            dependencies: ["CSProgress", "CSProgress+Foundation", "XCTAsyncAssertions"]
         ),
-//        .executableTarget(
-//            name: "CSProgressPerformanceTests",
-//            dependencies: ["CSProgress"],
-//            path: "Tests/CSProgressPerformanceTests"
-//        )
+        .executableTarget(
+            name: "CSProgressPerformanceTests",
+            dependencies: ["CSProgress", "CSProgress+Foundation"],
+            path: "Tests/CSProgressPerformanceTests",
+            swiftSettings: [.unsafeFlags(["-O"])]
+        )
     ]
 )

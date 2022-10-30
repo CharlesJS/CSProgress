@@ -350,7 +350,7 @@ final class CSProgressTest: XCTestCase {
         let storage2 = Storage(date: lastChecked)
 
         let waitForUpdates = { (storages: [Storage]) async -> Void in
-            for _ in 0..<1000000 {
+            for _ in 0..<10000000 {
                 var dates: [Date] = []
                 for eachStorage in storages {
                     dates.append(await eachStorage.updated)

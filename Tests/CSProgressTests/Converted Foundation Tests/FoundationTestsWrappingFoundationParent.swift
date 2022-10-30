@@ -1,7 +1,7 @@
 // This source file is adapted from code which is part of the Swift.org open source project.
 //
-// Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
-// Licensed under Apache License v2.0 with Runtime Library Exception
+// Original code Copyright (c) 2014 - 2016 Apple Inc. and the Swift project authors
+// Original code Licensed under Apache License v2.0 with Runtime Library Exception
 //
 // See http://swift.org/LICENSE.txt for license information
 // See http://swift.org/CONTRIBUTORS.txt for the list of Swift project authors
@@ -15,8 +15,8 @@ import Foundation
 @testable import CSProgress_Foundation
 import XCTAsyncAssertions
 
-final class ConvertedFoundationProgressWrappingTest: XCTestCase {
-    static var allTests: [(String, (ConvertedFoundationProgressWrappingTest) -> () async throws -> Void)] {
+final class FoundationTestsWrappingFoundationParent: XCTestCase {
+    static var allTests: [(String, (FoundationTestsWrappingFoundationParent) -> () async throws -> Void)] {
         return [
             ("test_totalCompletedChangeAffectsFractionCompleted", test_totalCompletedChangeAffectsFractionCompleted),
             ("test_indeterminateChildrenAffectFractionCompleted", test_indeterminateChildrenAffectFractionCompleted),

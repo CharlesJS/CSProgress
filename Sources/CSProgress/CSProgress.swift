@@ -87,7 +87,7 @@ public final class CSProgress {
 
     // The parent progress object.
     @ProgressIsolator
-    private weak var parent: CSProgress?
+    internal weak var parent: CSProgress?
 
     @ProgressIsolator
     private func setParent(_ parent: CSProgress?) {
@@ -242,6 +242,10 @@ public final class CSProgress {
     public class NotificationID: Hashable {
         static public func ==(lhs: NotificationID, rhs: NotificationID) -> Bool { lhs === rhs }
         public func hash(into hasher: inout Hasher) { ObjectIdentifier(self).hash(into: &hasher) }
+        internal let priority: TaskPriority?
+        internal init(priority: TaskPriority?) {
+            self.priority = priority
+        }
     }
 
     @ProgressIsolator private var cancellationNotifications: [NotificationID : CancellationNotification] = [:]
@@ -306,8 +310,11 @@ public final class CSProgress {
      - returns: An opaque value that can be passed to removeCancellationNotification() to de-register the notification.
      */
     @discardableResult
-    public func addCancellationNotification(notification: @escaping CancellationNotification) async -> NotificationID {
-        let id = NotificationID()
+    public func addCancellationNotification(
+        priority: TaskPriority? = nil,
+        notification: @escaping CancellationNotification
+    ) async -> NotificationID {
+        let id = NotificationID(priority: priority)
 
         await self._addCancellationNotification(identifier: id, notification: notification)
 
@@ -337,9 +344,10 @@ public final class CSProgress {
      - returns: An opaque value that can be passed to removeFractionCompletedNotification() to de-register the notification.
      */
     @discardableResult public func addFractionCompletedNotification(
+        priority: TaskPriority? = nil,
         notification: @escaping FractionCompletedNotification
     ) async -> NotificationID {
-        let id = NotificationID()
+        let id = NotificationID(priority: priority)
 
         await self._addFractionCompletedNotification(identifier: id, notification: notification)
 
@@ -369,9 +377,10 @@ public final class CSProgress {
      - returns: An opaque value that can be passed to removeDescriptionNotification() to de-register the notification.
      */
     @discardableResult public func addDescriptionNotification(
+        priority: TaskPriority? = nil,
         notification: @escaping DescriptionNotification
     ) -> NotificationID {
-        let id = NotificationID()
+        let id = NotificationID(priority: priority)
 
         Task {
             await self._addDescriptionNotification(identifier: id, notification: notification)
@@ -392,13 +401,16 @@ public final class CSProgress {
     // Fire our cancellation notifications.
     @ProgressIsolator
     private func sendCancellationNotifications() {
-        let notifications = self.cancellationNotifications
         let children = self.backing.children
 
-        Task {
-            for (eachKey, eachNotification) in notifications {
-                await eachNotification()
-                self._removeCancellationNotification(identifier: eachKey)
+        let notificationGroups = Dictionary(grouping: self.cancellationNotifications, by: \.key.priority?.rawValue)
+
+        for (priority, keysAndNotifications) in notificationGroups {
+            Task(priority: priority.map { TaskPriority(rawValue: $0) }) {
+                for (eachKey, eachNotification) in keysAndNotifications {
+                    await eachNotification()
+                    self._removeCancellationNotification(identifier: eachKey)
+                }
             }
         }
 
@@ -410,7 +422,6 @@ public final class CSProgress {
     // Fire our fractionCompleted notifications.
     @ProgressIsolator
     private func sendFractionCompletedNotifications(fractionCompleted: Double, isCompleted: Bool) {
-        let notifications = self.fractionCompletedNotifications.values
         let parent = self.parent
 
         if isCompleted, let parent = self.parent {
@@ -428,10 +439,13 @@ public final class CSProgress {
         } else if abs(fractionCompleted - self.lastNotifiedFractionCompleted) >= self.granularity || isCompleted {
             let completedUnitCount = self.backing.completedUnitCount
             let totalUnitCount = self.backing.totalUnitCount
+            let notificationGroups = Dictionary(grouping: self.fractionCompletedNotifications, by: \.key.priority?.rawValue)
 
-            for eachNotification in notifications {
-                Task {
-                    await eachNotification(completedUnitCount, totalUnitCount, fractionCompleted)
+            for (priority, keysAndNotifications) in notificationGroups {
+                Task(priority: priority.map { TaskPriority(rawValue: $0) }) {
+                    for (_, eachNotification) in keysAndNotifications {
+                        await eachNotification(completedUnitCount, totalUnitCount, fractionCompleted)
+                    }
                 }
             }
 
@@ -451,11 +465,14 @@ public final class CSProgress {
     private func sendDescriptionNotifications() {
         let description = self.backing.localizedDescription
         let additionalDescription = self.backing.localizedAdditionalDescription
-        let notifications = self.descriptionNotifications.values
 
-        for eachNotification in notifications {
-            Task {
-                await eachNotification(description, additionalDescription)
+        let notificationGroups = Dictionary(grouping: self.descriptionNotifications, by: \.key.priority?.rawValue)
+
+        for (priority, keysAndNotifications) in notificationGroups {
+            Task.detached(priority: priority.map { TaskPriority(rawValue: $0) }) {
+                for (_, eachNotification) in keysAndNotifications {
+                    await eachNotification(description, additionalDescription)
+                }
             }
         }
     }

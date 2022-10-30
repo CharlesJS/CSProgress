@@ -1,6 +1,6 @@
 //
 //  WrappingTests.swift
-//  
+//
 //
 //  Created by Charles Srstka on 10/24/22.
 //
@@ -24,7 +24,7 @@ final class WrappingTest: XCTestCase {
         }
 
         await child.incrementCompletedUnitCount(by: 1)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
 
         let thread = await MainActor.run { parent.userInfo }[userInfoKey] as? Thread
         XCTAssertTrue(thread?.isMainThread ?? false)

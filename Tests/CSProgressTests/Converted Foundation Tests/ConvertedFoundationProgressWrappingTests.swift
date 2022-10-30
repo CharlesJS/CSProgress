@@ -44,7 +44,7 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
         // Test child
         let child1 = await parent.pass(pendingUnitCount: 10).makeChild(totalUnitCount: 100)
         await child1.incrementCompletedUnitCount(by: 50)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
 
         // half of 10% is done in parent
         await XCTAssertEqualAsync(0.05, await MainActor.run { parent.fractionCompleted }, accuracy: 0.01)
@@ -60,7 +60,7 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
         await child1.setTotalUnitCount(200)
         await XCTAssertEqualAsync (50.0 / 200.0, await child1.fractionCompleted, accuracy: 0.01)
 
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(
             (50.0 / 200.0) * (10.0 / 200),
             await MainActor.run { parent.fractionCompleted },
@@ -71,7 +71,7 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
         await child1.setTotalUnitCount(100)
         await XCTAssertEqualAsync(50.0 / 100.0, await child1.fractionCompleted, accuracy: 0.01)
 
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(
             (50.0 / 100.0) * (10.0 / 200),
             await MainActor.run { parent.fractionCompleted },
@@ -86,12 +86,12 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
 
         await child1.setCompletedUnitCount(5)
 
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, 0.05, accuracy: 0.01)
 
         // Child1 becomes indeterminate
         await child1.setCompletedUnitCount(-1)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, 0.0, accuracy: 0.01)
 
         // Become determinate
@@ -102,12 +102,12 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
         // Unlike original test, don't complete the child progress all the way, because that will
         // cause it to complete and subsequently become detached from its parent.
         await child1.setCompletedUnitCount(9)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, 0.09, accuracy: 0.01)
 
         // Become indeterminate again
         await child1.setCompletedUnitCount(-1)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, 0.0, accuracy: 0.01)
     }
 
@@ -117,24 +117,24 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
         let child1 = await parent.pass(pendingUnitCount: 50).makeChild(totalUnitCount: 2)
         let child2 = await parent.pass(pendingUnitCount: 50).makeChild(totalUnitCount: 2)
 
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, 0.0, accuracy: 0.01)
 
         await child1.setCompletedUnitCount(1)
         await child2.setCompletedUnitCount(1)
 
         // half done
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, 0.5, accuracy: 0.01)
 
         // Move a child to indeterminate
         await child1.setCompletedUnitCount(-1)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, 0.25, accuracy: 0.01)
 
         // Move it back to determinate
         await child1.setCompletedUnitCount(1)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, 0.5, accuracy: 0.01)
     }
 
@@ -148,10 +148,10 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
 
         await child1.incrementCompletedUnitCount(by: 1)
 
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { root.fractionCompleted }, 0.5, accuracy: 0.01)
         await child2.incrementCompletedUnitCount(by: 1)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { root.fractionCompleted }, 1.0, accuracy: 0.01)
         await XCTAssertEqualAsync(await MainActor.run { root.completedUnitCount }, 2)
     }
@@ -168,14 +168,14 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
 
         // let's say some of this work is done inside the become/resign pair
         // half of 10% is done
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(0.05, await MainActor.run { parent.fractionCompleted })
 
         // ... and the rest is done outside the become/resign pair
         await child1.setCompletedUnitCount(100)
 
         // Now the rest is done
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(0.10, await MainActor.run { parent.fractionCompleted })
 
         // Add another child
@@ -183,7 +183,7 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
         await parent.addChild(child2, withPendingUnitCount: 90)
         await child2.setCompletedUnitCount(50)
 
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(0.10 + 0.9 / 2.0, await MainActor.run { parent.fractionCompleted })
     }
 
@@ -198,7 +198,7 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
         await child1.setCompletedUnitCount(50)
 
         // Half of 50% is done
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(0.25, await MainActor.run { parent.fractionCompleted })
 
         // Add a new child, but it is already in process
@@ -207,7 +207,7 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
         await parent.addChild(child2, withPendingUnitCount: 1)
 
         // half of 50% is done + half of 50% is done == 50% of overall work is done
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(0.50, await MainActor.run { parent.fractionCompleted })
     }
 
@@ -223,7 +223,7 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
         await parent.addChild(child1, withPendingUnitCount: 1)
 
         // all of 50% is done
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(0.5, await MainActor.run { parent.fractionCompleted })
     }
 
@@ -240,12 +240,12 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
         await child.addChild(grandchild, withPendingUnitCount: 100)
 
         // Now we have parentProgress <- childProgress <- grandchildProgress
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, 0.0)
 
         await grandchild.setCompletedUnitCount(50)
 
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(0.50, await MainActor.run { parent.fractionCompleted })
     }
 
@@ -259,11 +259,11 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
         let grandchild = await child.pass(pendingUnitCount: 100).makeChild(totalUnitCount: 100)
 
         // Now we have parentProgress <- childProgress <- grandchildProgress
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, 0.0)
 
         await grandchild.setCompletedUnitCount(50)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(0.50, await MainActor.run { parent.fractionCompleted })
     }
 
@@ -277,42 +277,42 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
 
         // child1 is half done. This means the parent is half of 1/3 done.
         await child1.setCompletedUnitCount(5)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, (1.0 / 3.0) / 2.0, accuracy: 0.01)
 
         // child2 is half done. This means the parent is (half of 1/3 done) + (half of 1/3 done).
         await child2.setCompletedUnitCount(5)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, ((1.0 / 3.0) / 2.0) * 2.0, accuracy: 0.01)
 
         // add an implict child
         let child3 = await parent.pass(pendingUnitCount: 1).makeChild(totalUnitCount: 10)
 
         // Total completed of parent should not change
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, ((1.0 / 3.0) / 2.0) * 2.0, accuracy: 0.01)
 
         // child3 is half done. This means the parent is (half of 1/3 done) * 3.
         await child3.setCompletedUnitCount(5)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, ((1.0 / 3.0) / 2.0) * 3.0, accuracy: 0.01)
 
         // Finish child3
         await child3.setCompletedUnitCount(10)
         await XCTAssertTrueAsync(await child3.isFinished)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, (((1.0 / 3.0) / 2.0) * 2.0) + (1.0 / 3.0), accuracy: 0.01)
 
         // Finish child2
         await child2.setCompletedUnitCount(10);
         await XCTAssertTrueAsync(await child2.isFinished)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, ((1.0 / 3.0) / 2.0) + ((1.0 / 3.0) * 2.0), accuracy: 0.01)
 
         // Finish child1
         await child1.setCompletedUnitCount(10);
         await XCTAssertTrueAsync(await child1.isFinished)
-        try await Task.sleep(nanoseconds: 1000)
+        try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { parent.fractionCompleted }, 1.0, accuracy: 0.01)
         await XCTAssertTrueAsync(await MainActor.run { parent.isFinished })
         await XCTAssertEqualAsync(
@@ -323,41 +323,51 @@ final class ConvertedFoundationProgressWrappingTest: XCTestCase {
     }
 
     func test_handlers() async throws {
+        actor Storage {
+            private(set) var cancelled = false
+            func cancel() { self.cancelled = true }
+        }
+
         let parent = Foundation.Progress.discreteProgress(totalUnitCount: 0)
         let child = await CSProgress.discreteProgress(totalUnitCount: 0)
 
         await parent.addChild(child, withPendingUnitCount: 1)
 
-        var parentTriggered = false
-        var childTriggered = false
+        let parentStorage = Storage()
+        let childStorage = Storage()
 
-        parent.cancellationHandler = { parentTriggered = true }
-        await child.addCancellationNotification { childTriggered = true }
+        parent.cancellationHandler = { Task { await parentStorage.cancel() } }
+        await child.addCancellationNotification { await childStorage.cancel() }
 
         parent.cancel()
 
         try await Task.sleep(nanoseconds: 3000000000)
 
-        XCTAssertTrue(parentTriggered)
-        XCTAssertTrue(childTriggered)
+        await XCTAssertTrueAsync(await parentStorage.cancelled)
+        await XCTAssertTrueAsync(await childStorage.cancelled)
     }
 
     func test_alreadyCancelled() async throws {
+        actor Storage {
+            private(set) var cancelled = false
+            func cancel() { self.cancelled = true }
+        }
+
         let parent = Foundation.Progress.discreteProgress(totalUnitCount: 0)
         let child = await CSProgress.discreteProgress(totalUnitCount: 0)
         await parent.addChild(child, withPendingUnitCount: 1)
 
         parent.cancel()
 
-        var parentTriggered = false
-        var childTriggered = false
+        let parentStorage = Storage()
+        let childStorage = Storage()
 
-        parent.cancellationHandler = { parentTriggered = true }
-        await child.addCancellationNotification { childTriggered = true }
+        parent.cancellationHandler = { Task { await parentStorage.cancel() } }
+        await child.addCancellationNotification { await childStorage.cancel() }
 
         try await Task.sleep(nanoseconds: 3000000000)
 
-        XCTAssertTrue(parentTriggered)
-        XCTAssertTrue(childTriggered)
+        await XCTAssertTrueAsync(await parentStorage.cancelled)
+        await XCTAssertTrueAsync(await childStorage.cancelled)
     }
 }

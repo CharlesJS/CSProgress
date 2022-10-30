@@ -194,14 +194,24 @@ func testCSProgressesRootedWithObservingNSProgress() async {
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
                 await withUnsafeContinuation { continuation in
-                    var watcher: NSObjectProtocol? = nil
+                    actor Storage {
+                        private(set) var watcher: NSObjectProtocol? = nil
+                        func setWatcher(_ watcher: NSObjectProtocol?) { self.watcher = watcher }
+                    }
 
-                    watcher = mainProgress.observe(\.fractionCompleted) { progress, _ in
-                        if progress.isFinished {
-                            _ = watcher.self // keep it from being reaped early by KVO
-                            watcher = nil
-                            continuation.resume()
-                        }
+                    let storage = Storage()
+
+                    Task {
+                        // keep watcher in storage to keep it from being reaped early
+                        await storage.setWatcher(mainProgress.observe(\.fractionCompleted) { progress, _ in
+                            if progress.isFinished {
+                                Task {
+                                    await storage.setWatcher(nil)
+                                }
+
+                                continuation.resume()
+                            }
+                        })
                     }
                 }
             }

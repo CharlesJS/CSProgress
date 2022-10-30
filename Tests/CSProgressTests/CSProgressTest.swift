@@ -102,18 +102,76 @@ final class CSProgressTest: XCTestCase {
         await XCTAssertTrueAsync(await progress.isIndeterminate)
     }
 
-    func testCancellationNotifications() async throws {
+    func testMarkComplete() async {
         let progress = await CSProgress.discreteProgress(totalUnitCount: 10)
 
-        var fired1 = false
-        var fired2 = false
+        await progress.pass(pendingUnitCount: 2).markComplete()
+        await XCTAssertEqualAsync(await progress.completedUnitCount, 2)
+        await XCTAssertFalseAsync(await progress.isFinished)
 
-        let notification1 = await progress.addCancellationNotification {
-            fired1 = true
+        await progress.pass(pendingUnitCount: 5).markComplete()
+        await XCTAssertEqualAsync(await progress.completedUnitCount, 7)
+        await XCTAssertFalseAsync(await progress.isFinished)
+
+        await progress.pass(pendingUnitCount: 3).markComplete()
+        await XCTAssertEqualAsync(await progress.completedUnitCount, 10)
+        await XCTAssertTrueAsync(await progress.isFinished)
+
+        let ns = Foundation.Progress.discreteProgress(totalUnitCount: 10)
+
+        await ns.pass(pendingUnitCount: 6).markComplete()
+        XCTAssertEqual(ns.completedUnitCount, 6)
+
+    }
+
+    func testPortionOfDeadProgress() async {
+        let portion: ProgressPortion = await {
+            let progress = await CSProgress.discreteProgress(totalUnitCount: 10)
+
+            return progress.pass(pendingUnitCount: 10)
+        }()
+
+        XCTAssertNil(portion.progress)
+
+        // Should never show as cancelled
+        await XCTAssertFalseAsync(await portion.isCancelled)
+
+        // Should still make children, but they should have no parent
+        let child = await portion.makeChild(totalUnitCount: 10)
+
+        // Should be a no-op, but not crash
+        await portion.markComplete()
+
+        await XCTAssertNilAsync(await child.parent)
+    }
+
+    func testCancellationNotifications() async throws {
+        actor Storage {
+            private(set) var updated: Date
+
+            func update() { self.updated = Date() }
+            init(date: Date) { self.updated = date }
         }
 
-        _ = await progress.addCancellationNotification {
-            fired2 = true
+        let startDate = Date()
+        let storage1 = Storage(date: startDate)
+        let storage2 = Storage(date: startDate)
+        let storage3 = Storage(date: startDate)
+
+        let progress = await CSProgress.discreteProgress(totalUnitCount: 10)
+
+        let notification1 = await progress.addCancellationNotification {
+            await storage1.update()
+        }
+
+        _ = await progress.addCancellationNotification(priority: .low) {
+            XCTAssertEqual(Task.currentPriority, .low)
+            await storage2.update()
+        }
+
+        _ = await progress.addCancellationNotification(priority: .high) {
+            XCTAssertEqual(Task.currentPriority, .high)
+            await storage3.update()
         }
 
         await XCTAssertFalseAsync(await progress.isCancelled)
@@ -121,20 +179,30 @@ final class CSProgressTest: XCTestCase {
         await progress.incrementCompletedUnitCount(by: 5)
 
         await XCTAssertFalseAsync(await progress.isCancelled)
-        try await Task.sleep(nanoseconds: 1000)
+        _ = try? await Task.sleep(nanoseconds: 1000000)
 
-        XCTAssertFalse(fired1)
-        XCTAssertFalse(fired2)
+        await XCTAssertEqualAsync(await storage1.updated, startDate)
+        await XCTAssertEqualAsync(await storage2.updated, startDate)
+        await XCTAssertEqualAsync(await storage3.updated, startDate)
 
         await progress.removeCancellationNotification(identifier: notification1)
 
         await progress.cancel()
 
         await XCTAssertTrueAsync(await progress.isCancelled)
-        try await Task.sleep(nanoseconds: 1000)
 
-        XCTAssertFalse(fired1)
-        XCTAssertTrue(fired2)
+        for _ in 0..<1000000 {
+            let updated2 = await storage2.updated
+            let updated3 = await storage3.updated
+
+            if updated2 > startDate && updated3 > startDate { break }
+
+            _ = try? await Task.sleep(nanoseconds: 1000)
+        }
+
+        await XCTAssertEqualAsync(await storage1.updated, startDate)
+        await XCTAssertGreaterThanAsync(await storage2.updated, startDate)
+        await XCTAssertGreaterThanAsync(await storage3.updated, startDate)
     }
 
     func testChildrenCancellation() async throws {
@@ -183,97 +251,195 @@ final class CSProgressTest: XCTestCase {
     }
 
     func testDescriptions() async throws {
+        actor Storage {
+            private(set) var description = ""
+            private(set) var additionalDescription = ""
+            private(set) var updated: Date
+
+            func update(description: String, additionalDescription: String) {
+                self.description = description
+                self.additionalDescription = additionalDescription
+                self.updated = Date()
+            }
+
+            init(date: Date) {
+                self.updated = date
+            }
+        }
+
+        var lastChecked = Date()
+        let storage1 = Storage(date: lastChecked)
+        let storage2 = Storage(date: lastChecked)
+
+        let waitForUpdates = { (storages: [Storage]) async -> Void in
+            for _ in 0..<1000000 {
+                var dates: [Date] = []
+                for eachStorage in storages {
+                    dates.append(await eachStorage.updated)
+                }
+
+                if let minDate = dates.min(), minDate > lastChecked {
+                    lastChecked = dates.max() ?? minDate
+                    break
+                }
+
+                _ = try? await Task.sleep(nanoseconds: 1000)
+            }
+        }
+
         let progress = await CSProgress.discreteProgress(totalUnitCount: 10)
 
-        var noticedDescription = ""
-        var noticedAdditionalDescription = ""
+        let notification1 = progress.addDescriptionNotification(priority: .high) { description, additionalDescription in
+            XCTAssertEqual(Task.currentPriority, .high)
+            await storage1.update(description: description, additionalDescription: additionalDescription)
+        }
 
-        let notification = progress.addDescriptionNotification { desc, additionalDesc in
-            noticedDescription = desc
-            noticedAdditionalDescription = additionalDesc
+        _ = progress.addDescriptionNotification(priority: .low) { description, additionalDescription in
+            XCTAssertEqual(Task.currentPriority, .low)
+            await storage2.update(description: description, additionalDescription: additionalDescription)
         }
 
         await progress.setLocalizedDescription("foo")
         await XCTAssertEqualAsync(await progress.localizedDescription, "foo")
-        try await Task.sleep(nanoseconds: 1000)
+        await waitForUpdates([storage1, storage2])
 
-        XCTAssertEqual(noticedDescription, "foo")
-        XCTAssertEqual(noticedAdditionalDescription, "")
+        await XCTAssertEqualAsync(await storage1.description, "foo")
+        await XCTAssertEqualAsync(await storage2.description, "foo")
+        await XCTAssertEqualAsync(await storage1.additionalDescription, "")
+        await XCTAssertEqualAsync(await storage2.additionalDescription, "")
 
         await progress.setLocalizedAdditionalDescription("bar")
         await XCTAssertEqualAsync(await progress.localizedAdditionalDescription, "bar")
-        try await Task.sleep(nanoseconds: 1000)
+        await waitForUpdates([storage1, storage2])
 
-        XCTAssertEqual(noticedDescription, "foo")
-        XCTAssertEqual(noticedAdditionalDescription, "bar")
+        await XCTAssertEqualAsync(await storage1.description, "foo")
+        await XCTAssertEqualAsync(await storage2.description, "foo")
+        await XCTAssertEqualAsync(await storage1.additionalDescription, "bar")
+        await XCTAssertEqualAsync(await storage2.additionalDescription, "bar")
 
-        await progress.removeDescriptionNotification(identifier: notification)
-        try await Task.sleep(nanoseconds: 1000)
+        await progress.removeDescriptionNotification(identifier: notification1)
+        _ = try? await Task.sleep(nanoseconds: 1000000)
 
-        XCTAssertEqual(noticedDescription, "foo")
-        XCTAssertEqual(noticedAdditionalDescription, "bar")
+        await XCTAssertEqualAsync(await storage1.description, "foo")
+        await XCTAssertEqualAsync(await storage2.description, "foo")
+        await XCTAssertEqualAsync(await storage1.additionalDescription, "bar")
+        await XCTAssertEqualAsync(await storage2.additionalDescription, "bar")
 
         await progress.setLocalizedDescription("baz")
         await XCTAssertEqualAsync(await progress.localizedDescription, "baz")
 
         await progress.setLocalizedAdditionalDescription("qux")
         await XCTAssertEqualAsync(await progress.localizedAdditionalDescription, "qux")
-        try await Task.sleep(nanoseconds: 1000)
+        _ = try? await Task.sleep(nanoseconds: 1000000)
+        await waitForUpdates([storage2])
 
-        XCTAssertEqual(noticedDescription, "foo")
-        XCTAssertEqual(noticedAdditionalDescription, "bar")
+        await XCTAssertEqualAsync(await storage1.description, "foo")
+        await XCTAssertEqualAsync(await storage2.description, "baz")
+        await XCTAssertEqualAsync(await storage1.additionalDescription, "bar")
+        await XCTAssertEqualAsync(await storage2.additionalDescription, "qux")
     }
 
     func testFractionCompleted() async throws {
-        let progress = await CSProgress.discreteProgress(totalUnitCount: 100)
+        actor Storage {
+            private(set) var unitCount: ProgressPortion.UnitCount = 0
+            private(set) var totalCount: ProgressPortion.UnitCount = 0
+            private(set) var fraction: Double = 0
+            private(set) var updated: Date
 
-        var notifiedUnitCount: ProgressPortion.UnitCount = 0
-        var notifiedTotalCount: ProgressPortion.UnitCount = 0
-        var notifiedFraction: Double = 0
+            func update(unitCount: ProgressPortion.UnitCount, totalCount: ProgressPortion.UnitCount, fraction: Double) {
+                self.unitCount = unitCount
+                self.totalCount = totalCount
+                self.fraction = fraction
+                self.updated = Date()
+            }
+
+            init(date: Date) {
+                self.updated = date
+            }
+        }
+
+        var lastChecked = Date()
+        let storage1 = Storage(date: lastChecked)
+        let storage2 = Storage(date: lastChecked)
+
+        let waitForUpdates = { (storages: [Storage]) async -> Void in
+            for _ in 0..<1000000 {
+                var dates: [Date] = []
+                for eachStorage in storages {
+                    dates.append(await eachStorage.updated)
+                }
+
+                if let minDate = dates.min(), minDate > lastChecked {
+                    lastChecked = dates.max() ?? minDate
+                    break
+                }
+
+                _ = try? await Task.sleep(nanoseconds: 1000)
+            }
+        }
+
+        let progress = await CSProgress.discreteProgress(totalUnitCount: 100)
 
         await XCTAssertEqualAsync(await progress.fractionCompleted, 0)
 
         await progress.incrementCompletedUnitCount(by: 12)
         await XCTAssertEqualAsync(await progress.fractionCompleted, 0.12)
-        try await Task.sleep(nanoseconds: 1000)
 
-        XCTAssertEqual(notifiedUnitCount, 0)
-        XCTAssertEqual(notifiedTotalCount, 0)
-        XCTAssertEqual(notifiedFraction, 0, accuracy: 0.001)
+        _ = try? await Task.sleep(nanoseconds: 1000000)
+        await XCTAssertEqualAsync(await storage1.unitCount, 0)
+        await XCTAssertEqualAsync(await storage2.unitCount, 0)
+        await XCTAssertEqualAsync(await storage1.totalCount, 0)
+        await XCTAssertEqualAsync(await storage2.totalCount, 0)
+        await XCTAssertEqualAsync(await storage1.fraction, 0, accuracy: 0.001)
+        await XCTAssertEqualAsync(await storage2.fraction, 0, accuracy: 0.001)
 
-        let notification = await progress.addFractionCompletedNotification { unitCount, totalCount, fraction in
-            notifiedUnitCount = unitCount
-            notifiedTotalCount = totalCount
-            notifiedFraction = fraction
+        let notification1 = await progress.addFractionCompletedNotification(priority: .high) {
+            XCTAssertEqual(Task.currentPriority, .high)
+            await storage1.update(unitCount: $0, totalCount: $1, fraction: $2)
+        }
+
+        _ = await progress.addFractionCompletedNotification(priority: .low) {
+            XCTAssertEqual(Task.currentPriority, .low)
+            await storage2.update(unitCount: $0, totalCount: $1, fraction: $2)
         }
 
         await progress.incrementCompletedUnitCount(by: 10)
         await XCTAssertEqualAsync(await progress.fractionCompleted, 0.22)
-        try await Task.sleep(nanoseconds: 1000)
 
-        XCTAssertEqual(notifiedUnitCount, 22)
-        XCTAssertEqual(notifiedTotalCount, 100)
-        XCTAssertEqual(notifiedFraction, 0.22, accuracy: 0.001)
+        await waitForUpdates([storage1, storage2])
+        await XCTAssertEqualAsync(await storage1.unitCount, 22)
+        await XCTAssertEqualAsync(await storage2.unitCount, 22)
+        await XCTAssertEqualAsync(await storage1.totalCount, 100)
+        await XCTAssertEqualAsync(await storage2.totalCount, 100)
+        await XCTAssertEqualAsync(await storage1.fraction, 0.22, accuracy: 0.001)
+        await XCTAssertEqualAsync(await storage2.fraction, 0.22, accuracy: 0.001)
 
         await progress.setTotalUnitCount(50)
         await XCTAssertEqualAsync(await progress.totalUnitCount, 50)
         await XCTAssertEqualAsync(await progress.fractionCompleted, 0.44, accuracy: 0.001)
-        try await Task.sleep(nanoseconds: 1000)
 
-        XCTAssertEqual(notifiedUnitCount, 22)
-        XCTAssertEqual(notifiedTotalCount, 50)
-        XCTAssertEqual(notifiedFraction, 0.44, accuracy: 0.001)
+        await waitForUpdates([storage1, storage2])
+        await XCTAssertEqualAsync(await storage1.unitCount, 22)
+        await XCTAssertEqualAsync(await storage2.unitCount, 22)
+        await XCTAssertEqualAsync(await storage1.totalCount, 50)
+        await XCTAssertEqualAsync(await storage2.totalCount, 50)
+        await XCTAssertEqualAsync(await storage1.fraction, 0.44, accuracy: 0.001)
+        await XCTAssertEqualAsync(await storage2.fraction, 0.44, accuracy: 0.001)
 
-        await progress.removeFractionCompletedNotification(identifier: notification)
+        await progress.removeFractionCompletedNotification(identifier: notification1)
 
         await progress.incrementCompletedUnitCount(by: 10)
         await XCTAssertEqualAsync(await progress.completedUnitCount, 32)
         await XCTAssertEqualAsync(await progress.fractionCompleted, 0.64)
-        try await Task.sleep(nanoseconds: 1000)
+        _ = try? await Task.sleep(nanoseconds: 1000000)
 
-        XCTAssertEqual(notifiedUnitCount, 22)
-        XCTAssertEqual(notifiedTotalCount, 50)
-        XCTAssertEqual(notifiedFraction, 0.44, accuracy: 0.001)
+        await waitForUpdates([storage2])
+        await XCTAssertEqualAsync(await storage1.unitCount, 22)
+        await XCTAssertEqualAsync(await storage2.unitCount, 32)
+        await XCTAssertEqualAsync(await storage1.totalCount, 50)
+        await XCTAssertEqualAsync(await storage2.totalCount, 50)
+        await XCTAssertEqualAsync(await storage1.fraction, 0.44, accuracy: 0.001)
+        await XCTAssertEqualAsync(await storage2.fraction, 0.64, accuracy: 0.001)
     }
 
     func testDebugDescription() async {

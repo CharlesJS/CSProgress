@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "xctasyncassertions",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/CharlesJS/XCTAsyncAssertions",
+      "state" : {
+        "revision" : "8656600b08451b692f1bbbe442f4eb727954bfeb",
+        "version" : "0.1.0"
+      }
+    }
+  ],
+  "version" : 2
+}

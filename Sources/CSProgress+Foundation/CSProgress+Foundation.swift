@@ -174,10 +174,13 @@ extension CSProgress {
         description: String,
         additionalDescription: String
     ) {
+#if canImport(Darwin)
+        // These properties are not yet implemented in swift-corelibs-foundation as of this writing
         if let ns {
             ns.localizedDescription = description
             ns.localizedAdditionalDescription = additionalDescription
         }
+#endif
     }
 
     @MainActor private func updateCancellation(ns: Foundation.Progress?) {

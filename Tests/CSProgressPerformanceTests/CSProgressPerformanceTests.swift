@@ -23,6 +23,7 @@ private func timeIt(label: String, closure: () async -> ()) async {
     print("\(label): Completed in \(endDate.timeIntervalSince(startDate)) seconds")
 }
 
+#if canImport(Darwin)
 func testNSProgresses() async {
     let mainProgress = Foundation.Progress.discreteProgress(totalUnitCount: Int64(unitCount) * 5)
     let progresses =
@@ -114,6 +115,7 @@ func testNSProgressesWithObserverAndAutoreleasePool() async {
 
     _ = watcher.self
 }
+#endif
 
 private func makeCSProgresses() async -> [CSProgress] {
     let mainProgress = await CSProgress.discreteProgress(totalUnitCount: unitCount * 5, granularity: granularity)
@@ -179,6 +181,7 @@ func testCSProgressesWithObserver() async {
     }
 }
 
+#if canImport(Darwin)
 func testCSProgressesRootedWithObservingNSProgress() async {
     let mainProgress = Foundation.Progress.discreteProgress(totalUnitCount: Int64(unitCount) * 5)
 
@@ -235,6 +238,7 @@ func testCSProgressesRootedWithObservingNSProgress() async {
         }
     }
 }
+#endif
 
 func testCSProgressesUsedSynchronously() async {
     let progresses = await makeCSProgresses()

@@ -15,16 +15,21 @@ final class WrappingTest: XCTestCase {
     func testMakeWrappingFoundationProgress() async throws {
         let ns = Foundation.Progress.discreteProgress(totalUnitCount: 10)
         ns.completedUnitCount = 2
+
+#if canImport(Darwin)
         ns.localizedDescription = "foo"
         ns.localizedAdditionalDescription = "bar"
+#endif
 
         let progress = await CSProgress(wrapping: ns)
 
         await XCTAssertEqualAsync(await progress.completedUnitCount, 2)
         await XCTAssertEqualAsync(await progress.totalUnitCount, 10)
         await XCTAssertEqualAsync(await progress.fractionCompleted, 0.2)
+#if canImport(Darwin)
         await XCTAssertEqualAsync(await progress.localizedDescription, "foo")
         await XCTAssertEqualAsync(await progress.localizedAdditionalDescription, "bar")
+#endif
 
         await progress.incrementCompletedUnitCount(by: 3)
         try await Task.sleep(nanoseconds: 1000000)
@@ -34,6 +39,7 @@ final class WrappingTest: XCTestCase {
         try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { ns.fractionCompleted }, 0.25, accuracy: 0.001)
 
+#if canImport(Darwin)
         await progress.setLocalizedDescription("baz")
         try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { ns.localizedDescription }, "baz")
@@ -41,12 +47,14 @@ final class WrappingTest: XCTestCase {
         await progress.setLocalizedAdditionalDescription("qux")
         try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertEqualAsync(await MainActor.run { ns.localizedAdditionalDescription }, "qux")
+#endif
 
         await progress.cancel()
         try await Task.sleep(nanoseconds: 1000000)
         await XCTAssertTrueAsync(await MainActor.run { ns.isCancelled })
     }
 
+#if canImport(Darwin)
     func testKVONotificationsOccurOnMainThread() async throws {
         actor Storage {
             private(set) var accessCount = 0
@@ -109,6 +117,7 @@ final class WrappingTest: XCTestCase {
         _ = additionalDescriptionWatcher.self
         _ = cancelWatcher.self
     }
+#endif
 
     func testWrappingCancelledProgress() async throws {
         let ns = Foundation.Progress.discreteProgress(totalUnitCount: 10)
@@ -141,6 +150,7 @@ final class WrappingTest: XCTestCase {
         await XCTAssertTrueAsync(await MainActor.run { parent.isFinished })
     }
 
+#if canImport(Darwin)
     func testKVONotificationsForParentOccurOnMainThread() async throws {
         actor Storage {
             private(set) var accessCount = 0
@@ -169,4 +179,5 @@ final class WrappingTest: XCTestCase {
 
         _ = watcher.self  // prevent ARC from reaping the watcher early
     }
+#endif
 }

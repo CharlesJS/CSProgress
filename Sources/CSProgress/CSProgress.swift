@@ -600,7 +600,7 @@ public final class CSProgress: CustomDebugStringConvertible {
                     parent.sendFractionCompletedNotifications(fractionCompleted: parent.backing.fractionCompleted, isCompleted: parent.backing.isCompleted, completionHandler: completionHandler)
                 }
             }
-        } else if abs(fractionCompleted - lastNotifiedFractionCompleted) >= self.granularity {
+        } else if isCompleted || abs(fractionCompleted - lastNotifiedFractionCompleted) >= self.granularity {
             let completedUnitCount = self.backing.completedUnitCount
             let totalUnitCount = self.backing.totalUnitCount
             

@@ -1,5 +1,7 @@
 # CSProgress
 
+(note: for the WIP 2.0 version based around Swift Concurrency, checkout the `concurrency` branch.)
+
 ## Introduction
 
 NSProgress (renamed to Progress in Swift 3) is a Foundation class introduced in Mac OS X 10.9 (“Mavericks”), intended to simplify progress reporting in Mac and iOS applications. The concept it introduces is great, creating a tree of progress objects, all of which
